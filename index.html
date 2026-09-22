@@ -146,6 +146,28 @@ h3{font:600 15px/1.2 var(--f-cond);letter-spacing:.02em;margin:0}
 .check{display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer}
 .check input{accent-color:var(--accent);width:16px;height:16px}
 .divider{height:1px;background:var(--line)}
+.selpop{position:absolute;z-index:5;width:300px;max-width:calc(100% - 16px);background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.35);padding:10px;display:flex;flex-direction:column;gap:9px;transition:opacity .12s}
+.selpop.dragging{opacity:0;pointer-events:none}
+.selpop.docked{left:8px;right:8px;bottom:8px;top:auto;width:auto;max-width:none}
+.sp-row{display:flex;align-items:center;gap:8px;min-width:0}
+.sp-row .label{width:46px;flex:none}
+.sp-row input[type=range]{flex:1;min-width:0;accent-color:var(--accent)}
+.sp-row output{font:600 12px/1 var(--f-mono);min-width:40px;text-align:right;color:var(--ink-2)}
+.sp-row .seg{flex:1}
+.sp-colors{justify-content:space-between}
+.sp-colors .sw{width:26px;height:26px}
+.sp-gap{flex:1}
+.ibtn{width:34px;height:34px;flex:none;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);display:grid;place-items:center;color:var(--ink-2);cursor:pointer;padding:0}
+.ibtn:hover{color:var(--ink);border-color:var(--ink-3)}
+.ibtn.danger{color:var(--bad)}
+.ibtn:disabled{opacity:.4;cursor:not-allowed}
+.cropbar{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:5;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;width:max-content;max-width:calc(100% - 16px);background:rgba(12,16,20,.9);border:1px solid #33404B;border-radius:12px;padding:6px}
+.cropbar .seg{border-color:#3A4550}
+.cropbar .seg button{background:transparent;color:#C9D3DC}
+.cropbar .seg button+button{border-left-color:#3A4550}
+.cropbar .seg button[aria-pressed="true"]{background:#1E4F54;color:#fff}
+.cropbar .btn{background:transparent;border-color:#3A4550;color:#E6ECF1}
+.cropbar .btn.primary{background:#0E6B73;border-color:#0E6B73;color:#fff}
 @media (max-width:960px){
   .markup{grid-template-columns:1fr;grid-template-rows:auto auto auto;height:auto}
   .stage-wrap{order:1}.rail{order:2}.side{order:3}
@@ -255,6 +277,14 @@ h3{font:600 15px/1.2 var(--f-cond);letter-spacing:.02em;margin:0}
           <div class="stage" id="stage">
             <canvas id="ed" hidden></canvas>
             <div class="stage-empty" id="stageEmpty">Take or import a photo to start marking it up.</div>
+            <div class="selpop" id="selpop" role="toolbar" aria-label="Selected mark" hidden></div>
+            <div class="cropbar" id="cropbar" role="toolbar" aria-label="Crop" hidden>
+              <div class="seg" id="cropAspect"><button type="button" data-v="free">Free</button><button type="button" data-v="1:1">1:1</button><button type="button" data-v="4:3">4:3</button><button type="button" data-v="16:9">16:9</button></div>
+              <button class="btn sm" type="button" id="cropRotL" title="Rotate photo left" aria-label="Rotate photo left"></button>
+              <button class="btn sm" type="button" id="cropRotR" title="Rotate photo right" aria-label="Rotate photo right"></button>
+              <button class="btn sm" type="button" id="cropCancel">Cancel</button>
+              <button class="btn sm primary" type="button" id="cropApply">Apply crop</button>
+            </div>
           </div>
         </div>
         <aside class="side">
@@ -382,6 +412,10 @@ const ICON = {
   check: '<path d="M5 12l5 5 9-10"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  crop: '<path d="M6 2v14a2 2 0 002 2h14"/><path d="M2 6h14a2 2 0 012 2v14"/>',
+  rotL: '<path d="M3 4v5h5"/><path d="M4.5 15a8 8 0 101.9-8.3L3 9"/>',
+  rotR: '<path d="M21 4v5h-5"/><path d="M19.5 15a8 8 0 11-1.9-8.3L21 9"/>',
+  dup: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 15V5a1 1 0 011-1h10"/>',
 };
 const icon = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -512,6 +546,7 @@ function textBox(s) {
 // scale = image px -> device px, only used so shadows look the same at every zoom
 function drawShape(ctx, s, scale = 1) {
   ctx.save();
+  if (s.rot) { const c = center(s); ctx.translate(c.x, c.y); ctx.rotate(rad(s.rot)); ctx.translate(-c.x, -c.y); }
   ctx.strokeStyle = ctx.fillStyle = s.color;
   ctx.lineWidth = s.lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   const halo = isLight(s.color) ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.55)';
@@ -582,27 +617,49 @@ function moveShape(s, o, dx, dy) {
   else if (s.type === 'text' || s.type === 'marker') { s.x = o.x + dx; s.y = o.y + dy; }
   else { s.x1 = o.x1 + dx; s.y1 = o.y1 + dy; s.x2 = o.x2 + dx; s.y2 = o.y2 + dy; }
 }
+const rad = d => d * Math.PI / 180;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const normDeg = a => ((a + 180) % 360 + 360) % 360 - 180;
+function center(s) { const b = bbox(s); return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; }
+function rotPt(x, y, c, deg) {
+  const a = rad(deg), cs = Math.cos(a), sn = Math.sin(a), dx = x - c.x, dy = y - c.y;
+  return { x: c.x + dx * cs - dy * sn, y: c.y + dx * sn + dy * cs };
+}
+// scale a mark about its own centre; stroke thickness is left alone (that's the Line setting)
+function scaleShape(s, o, k) {
+  const c = center(o), sc = (x, y) => [c.x + (x - c.x) * k, c.y + (y - c.y) * k];
+  if (s.type === 'pen') s.pts = o.pts.map(([x, y]) => sc(x, y));
+  else if (s.type === 'text') { s.fs = o.fs * k; [s.x, s.y] = sc(o.x, o.y); }
+  else if (s.type === 'marker') s.r = o.r * k;
+  else { [s.x1, s.y1] = sc(o.x1, o.y1); [s.x2, s.y2] = sc(o.x2, o.y2); }
+}
 const markers = p => p.shapes.filter(s => s.type === 'marker');
 function renumber(p) { let n = 0; p.shapes.forEach(s => { if (s.type === 'marker') s.n = ++n; }); }
 
 /* ---------- editor ---------- */
 const ed = $('#ed'), ectx = ed.getContext('2d');
-const E = { view: 1, k: 1, drawing: null, sel: -1, drag: null, undo: [], redo: [] };
+const E = { view: 1, k: 1, drawing: null, sel: -1, drag: null, undo: [], redo: [], crop: null, sizeBase: null, rotSlide: false };
 const curPhoto = () => photoById(S.current);
 const baseLw = p => Math.max(p.w, p.h) / 320;
+const selShape = () => { const p = curPhoto(); return p && E.sel >= 0 ? p.shapes[E.sel] || null : null; };
+const clone = o => JSON.parse(JSON.stringify(o));
 
 function buildRail() {
   const tools = [['select', 'Select & move (V)'], ['pen', 'Freehand (P)'], ['arrow', 'Arrow (A)'], ['rect', 'Box (B)'], ['ellipse', 'Circle (C)'], ['text', 'Text (T)'], ['marker', 'Numbered callout (N)']];
   $('#rail').innerHTML =
     `<div class="grp">${tools.map(([t, n]) => `<button class="tool" type="button" data-tool="${t}" title="${n}" aria-label="${n}">${icon(t)}</button>`).join('')}</div>` +
+    `<div class="grp"><button class="tool" type="button" id="btnCrop" title="Crop photo (X)" aria-label="Crop photo">${icon('crop')}</button><button class="tool" type="button" id="btnRotL" title="Rotate photo left" aria-label="Rotate photo left">${icon('rotL')}</button><button class="tool" type="button" id="btnRotR" title="Rotate photo right" aria-label="Rotate photo right">${icon('rotR')}</button></div>` +
     `<div class="grp">${COLORS.map(c => `<button class="sw" type="button" data-color="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}"></button>`).join('')}</div>` +
     `<div class="grp">${Object.keys(SIZES).map(z => `<button class="sz" type="button" data-size="${z}" title="Line ${z.toUpperCase()}" aria-label="Line size ${z.toUpperCase()}"><i style="height:${{ s: 2, m: 4, l: 7 }[z]}px"></i></button>`).join('')}</div>` +
     `<div class="grp"><button class="tool" type="button" id="btnUndo" title="Undo (Ctrl+Z)" aria-label="Undo">${icon('undo')}</button><button class="tool" type="button" id="btnRedo" title="Redo (Ctrl+Y)" aria-label="Redo">${icon('redo')}</button><button class="tool" type="button" id="btnDel" title="Delete selected (Del)" aria-label="Delete selected">${icon('trash')}</button></div>`;
   $('#rail').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.tool) { S.tool = b.dataset.tool; if (S.tool !== 'select') E.sel = -1; }
+    if (b.dataset.tool) { exitCrop(); S.tool = b.dataset.tool; if (S.tool !== 'select') setSel(-1); }
     else if (b.dataset.color) { S.color = b.dataset.color; recolorSelected(); }
     else if (b.dataset.size) S.size = b.dataset.size;
+    else if (b.id === 'btnCrop') E.crop ? exitCrop() : startCrop();
+    else if (b.id === 'btnRotL') rotateImage(-1);
+    else if (b.id === 'btnRotR') rotateImage(1);
     else if (b.id === 'btnUndo') undo();
     else if (b.id === 'btnRedo') redo();
     else if (b.id === 'btnDel') deleteSelected();
@@ -610,18 +667,18 @@ function buildRail() {
   });
 }
 function syncRail() {
-  document.querySelectorAll('#rail [data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === S.tool));
+  document.querySelectorAll('#rail [data-tool]').forEach(b => b.setAttribute('aria-pressed', !E.crop && b.dataset.tool === S.tool));
   document.querySelectorAll('#rail [data-color]').forEach(b => b.setAttribute('aria-pressed', b.dataset.color === S.color));
   document.querySelectorAll('#rail [data-size]').forEach(b => b.setAttribute('aria-pressed', b.dataset.size === S.size));
-  $('#btnUndo').disabled = !E.undo.length; $('#btnRedo').disabled = !E.redo.length; $('#btnDel').disabled = E.sel < 0;
-  ed.style.cursor = S.tool === 'select' ? 'default' : 'crosshair';
+  $('#btnCrop').setAttribute('aria-pressed', !!E.crop);
+  $('#btnUndo').disabled = !E.undo.length; $('#btnRedo').disabled = !E.redo.length; $('#btnDel').disabled = !selShape();
+  ed.style.cursor = E.crop ? 'move' : S.tool === 'select' ? 'default' : 'crosshair';
 }
-function recolorSelected() {
-  const p = curPhoto(); if (!p || E.sel < 0) return;
-  commit(() => { p.shapes[E.sel].color = S.color; });
-}
+function setSel(i) { E.sel = i; E.sizeBase = null; E.rotSlide = false; syncSelPop(); }
+function recolorSelected() { const s = selShape(); if (s) commit(() => { s.color = S.color; }); }
 function openEditor(id) {
-  S.current = id; E.undo = []; E.redo = []; E.sel = -1; E.drawing = null;
+  S.current = id; E.undo = []; E.redo = []; E.sel = -1; E.drawing = null; E.crop = null; E.sizeBase = null;
+  $('#cropbar').hidden = true;
   showView('markup');
 }
 function syncEditor() {
@@ -631,7 +688,7 @@ function syncEditor() {
   $('#stageTitle').textContent = p ? `Photo ${i + 1} of ${S.photos.length}${p.sample ? ' · sample' : ''}` : 'No photo';
   $('#btnPrev').disabled = i <= 0; $('#btnNext').disabled = i < 0 || i >= S.photos.length - 1;
   $('#f-caption').value = p ? p.caption : ''; $('#f-caption').disabled = !p;
-  fitEd(); renderEd(); renderNotes(); syncRail();
+  fitEd(); renderEd(); renderNotes(); syncRail(); syncSelPop();
   document.querySelectorAll('#markupActions button').forEach(b => b.disabled = !p);
 }
 function fitEd() {
@@ -645,6 +702,19 @@ function fitEd() {
   ed.width = Math.round(cw * dpr); ed.height = Math.round(ch * dpr);
   E.view = ed.width / p.w; E.k = p.w / cw;
 }
+
+/* selection geometry: frame, rotate handle and resize handle, in image coords */
+function selGeom(s) {
+  const b = bbox(s), c = center(s), m = 8 * E.k, r = s.rot || 0;
+  const fr = { x: b.x - m, y: b.y - m, w: b.w + 2 * m, h: b.h + 2 * m };
+  return { b, c, fr, r, rotH: rotPt(c.x, fr.y - 30 * E.k, c, r), sclH: rotPt(fr.x + fr.w, fr.y + fr.h, c, r) };
+}
+function drawHandle(pt, round) {
+  const r = 7 * E.k; ectx.save();
+  ectx.fillStyle = '#fff'; ectx.strokeStyle = '#0E6B73'; ectx.lineWidth = 2 * E.k; ectx.shadowColor = 'rgba(0,0,0,.5)'; ectx.shadowBlur = 4;
+  ectx.beginPath(); round ? ectx.arc(pt.x, pt.y, r, 0, Math.PI * 2) : ectx.rect(pt.x - r, pt.y - r, r * 2, r * 2);
+  ectx.fill(); ectx.shadowBlur = 0; ectx.stroke(); ectx.restore();
+}
 function renderEd() {
   const p = curPhoto(); if (!p) return;
   ectx.setTransform(1, 0, 0, 1, 0, 0); ectx.clearRect(0, 0, ed.width, ed.height);
@@ -652,49 +722,214 @@ function renderEd() {
   ectx.drawImage(p.img, 0, 0, p.w, p.h);
   p.shapes.forEach(s => drawShape(ectx, s, E.view));
   if (E.drawing) drawShape(ectx, E.drawing, E.view);
-  if (E.sel >= 0 && p.shapes[E.sel]) {
-    const b = bbox(p.shapes[E.sel]), m = 8 * E.k;
-    ectx.save(); ectx.setLineDash([6 * E.k, 4 * E.k]); ectx.lineWidth = 1.5 * E.k; ectx.strokeStyle = '#fff';
+  const s = selShape();
+  if (s && !E.crop) {
+    const g = selGeom(s);
+    ectx.save(); ectx.translate(g.c.x, g.c.y); ectx.rotate(rad(g.r)); ectx.translate(-g.c.x, -g.c.y);
+    ectx.setLineDash([6 * E.k, 4 * E.k]); ectx.lineWidth = 1.5 * E.k; ectx.strokeStyle = '#fff';
     ectx.shadowColor = 'rgba(0,0,0,.7)'; ectx.shadowBlur = 3;
-    ectx.strokeRect(b.x - m, b.y - m, b.w + m * 2, b.h + m * 2); ectx.restore();
+    ectx.strokeRect(g.fr.x, g.fr.y, g.fr.w, g.fr.h);
+    ectx.setLineDash([]); ectx.beginPath(); ectx.moveTo(g.c.x, g.fr.y); ectx.lineTo(g.c.x, g.fr.y - 30 * E.k); ectx.stroke();
+    ectx.restore();
+    drawHandle(g.rotH, true); drawHandle(g.sclH, false);
   }
+  if (E.crop) drawCrop(p);
+  placeSelPop();
 }
 const toImg = e => { const r = ed.getBoundingClientRect(); return { x: (e.clientX - r.left) * E.k, y: (e.clientY - r.top) * E.k }; };
-function hitIndex(p, pt) { const tol = 10 * E.k; for (let i = p.shapes.length - 1; i >= 0; i--) if (hitShape(p.shapes[i], pt.x, pt.y, tol)) return i; return -1; }
-function pushUndo(p) { E.undo.push(JSON.stringify(p.shapes)); if (E.undo.length > 100) E.undo.shift(); E.redo = []; }
+function hitOne(s, pt) { const q = s.rot ? rotPt(pt.x, pt.y, center(s), -s.rot) : pt; return hitShape(s, q.x, q.y, 10 * E.k); }
+function hitIndex(p, pt) { for (let i = p.shapes.length - 1; i >= 0; i--) if (hitOne(p.shapes[i], pt)) return i; return -1; }
+
+/* ---------- undo: snapshots hold markup JSON plus the image blob (for crop/rotate) ---------- */
+const snap = p => ({ shapes: JSON.stringify(p.shapes), blob: p.blob, w: p.w, h: p.h });
+function pushUndo(p, s = snap(p)) { E.undo.push(s); if (E.undo.length > 60) E.undo.shift(); E.redo = []; }
 function commit(fn) { const p = curPhoto(); if (!p) return; pushUndo(p); fn(); changed(); }
-function changed() { const p = curPhoto(); renderEd(); renderNotes(); syncRail(); if (p) scheduleSave(p); }
-function undo() { const p = curPhoto(); if (!p || !E.undo.length) return; E.redo.push(JSON.stringify(p.shapes)); p.shapes = JSON.parse(E.undo.pop()); E.sel = -1; changed(); }
-function redo() { const p = curPhoto(); if (!p || !E.redo.length) return; E.undo.push(JSON.stringify(p.shapes)); p.shapes = JSON.parse(E.redo.pop()); E.sel = -1; changed(); }
+function changed() { const p = curPhoto(); fitEd(); renderEd(); renderNotes(); syncRail(); syncSelPop(); if (p) scheduleSave(p); }
+async function restore(p, s) {
+  p.shapes = JSON.parse(s.shapes);
+  if (s.blob !== p.blob) await setImage(p, s.blob, s.w, s.h);
+  if (E.sel >= p.shapes.length) E.sel = -1;
+  E.sizeBase = null; changed();
+}
+// image operations are async; run them one at a time so quick taps can't interleave history
+let opQueue = Promise.resolve();
+const queue = fn => (opQueue = opQueue.then(fn).catch(() => toast('That edit didn’t work — try again.')));
+function undo() { queue(async () => { const p = curPhoto(); if (!p || !E.undo.length) return; E.redo.push(snap(p)); await restore(p, E.undo.pop()); }); }
+function redo() { queue(async () => { const p = curPhoto(); if (!p || !E.redo.length) return; E.undo.push(snap(p)); await restore(p, E.redo.pop()); }); }
 function deleteSelected() {
-  const p = curPhoto(); if (!p || E.sel < 0) return;
+  const p = curPhoto(); if (!p || !selShape()) return;
   commit(() => { p.shapes.splice(E.sel, 1); renumber(p); E.sel = -1; });
 }
+function duplicateSelected() {
+  const p = curPhoto(), s = selShape(); if (!s) return;
+  commit(() => {
+    const c = clone(s); moveShape(c, clone(s), 24 * E.k, 24 * E.k);
+    if (c.type === 'marker') c.note = '';
+    p.shapes.push(c); renumber(p); E.sel = p.shapes.length - 1; E.sizeBase = null;
+  });
+}
 
+/* ---------- photo crop & rotate ---------- */
+const jpegBlob = c => new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
+async function setImage(p, blob, w, h) {
+  const old = p.url;
+  p.url = URL.createObjectURL(blob); p.img = await loadImage(p.url);
+  p.blob = blob; p.w = w; p.h = h;
+  URL.revokeObjectURL(old);
+}
+const rotateImage = dir => queue(() => rotateImageNow(dir));
+async function rotateImageNow(dir) {
+  const p = curPhoto(); if (!p) return;
+  pushUndo(p);
+  const w0 = p.w, h0 = p.h, c = document.createElement('canvas'); c.width = h0; c.height = w0;
+  const x = c.getContext('2d');
+  if (dir > 0) { x.translate(h0, 0); x.rotate(Math.PI / 2); } else { x.translate(0, w0); x.rotate(-Math.PI / 2); }
+  x.drawImage(p.img, 0, 0, w0, h0);
+  const map = dir > 0 ? (a, b) => [h0 - b, a] : (a, b) => [b, w0 - a];
+  // markup follows the photo; text and callout numbers stay upright
+  p.shapes.forEach(s => {
+    if (s.type === 'pen') s.pts = s.pts.map(([a, b]) => map(a, b));
+    else if (s.type === 'text') { const cc = center(s), bb = bbox(s), [nx, ny] = map(cc.x, cc.y); s.x = nx - bb.w / 2; s.y = ny - bb.h / 2; }
+    else if (s.type === 'marker') [s.x, s.y] = map(s.x, s.y);
+    else { [s.x1, s.y1] = map(s.x1, s.y1); [s.x2, s.y2] = map(s.x2, s.y2); }
+  });
+  await setImage(p, await jpegBlob(c), h0, w0);
+  if (E.crop) Object.assign(E.crop, { x: 0, y: 0, w: p.w, h: p.h, aspect: 0, key: 'free' });
+  changed(); syncCropBar();
+}
+function startCrop() {
+  const p = curPhoto(); if (!p) return;
+  setSel(-1); E.drawing = null;
+  E.crop = { x: 0, y: 0, w: p.w, h: p.h, aspect: 0, key: 'free', drag: null };
+  $('#cropbar').hidden = false; syncCropBar(); syncRail(); renderEd();
+}
+function exitCrop() { if (!E.crop) return; E.crop = null; $('#cropbar').hidden = true; syncRail(); renderEd(); }
+function syncCropBar() { if (E.crop) document.querySelectorAll('#cropAspect button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === E.crop.key)); }
+function setCropAspect(key) {
+  const p = curPhoto(); if (!p || !E.crop) return;
+  let a = { free: 0, '1:1': 1, '4:3': 4 / 3, '16:9': 16 / 9 }[key];
+  if (a && p.h > p.w) a = 1 / a;   // follow the photo's orientation
+  E.crop.aspect = a; E.crop.key = key;
+  if (a) { const w = Math.min(p.w, p.h * a), h = w / a; Object.assign(E.crop, { x: (p.w - w) / 2, y: (p.h - h) / 2, w, h }); }
+  syncCropBar(); renderEd();
+}
+function applyCrop() {
+  const c = E.crop; if (!c) return;
+  const r = { x: Math.round(c.x), y: Math.round(c.y), w: Math.round(c.w), h: Math.round(c.h) };
+  exitCrop();
+  queue(() => applyCropNow(r));
+}
+async function applyCropNow(r) {
+  const p = curPhoto(); if (!p) return;
+  if (r.x === 0 && r.y === 0 && r.w === p.w && r.h === p.h) return;
+  pushUndo(p);
+  const cv = document.createElement('canvas'); cv.width = r.w; cv.height = r.h;
+  cv.getContext('2d').drawImage(p.img, -r.x, -r.y, p.w, p.h);
+  p.shapes.forEach(s => moveShape(s, clone(s), -r.x, -r.y));
+  await setImage(p, await jpegBlob(cv), r.w, r.h);
+  changed(); toast('Photo cropped — Undo restores it');
+}
+function drawCrop(p) {
+  const c = E.crop; ectx.save();
+  ectx.fillStyle = 'rgba(0,0,0,.6)'; ectx.beginPath(); ectx.rect(0, 0, p.w, p.h); ectx.rect(c.x, c.y, c.w, c.h); ectx.fill('evenodd');
+  ectx.strokeStyle = 'rgba(255,255,255,.45)'; ectx.lineWidth = E.k; ectx.beginPath();
+  for (let i = 1; i < 3; i++) { ectx.moveTo(c.x + c.w * i / 3, c.y); ectx.lineTo(c.x + c.w * i / 3, c.y + c.h); ectx.moveTo(c.x, c.y + c.h * i / 3); ectx.lineTo(c.x + c.w, c.y + c.h * i / 3); }
+  ectx.stroke();
+  ectx.strokeStyle = '#fff'; ectx.lineWidth = 1.5 * E.k; ectx.strokeRect(c.x, c.y, c.w, c.h);
+  const L = Math.min(24 * E.k, c.w / 3, c.h / 3), x2 = c.x + c.w, y2 = c.y + c.h;
+  ectx.lineWidth = 4 * E.k; ectx.lineCap = 'square'; ectx.beginPath();
+  [[c.x, c.y, 1, 1], [x2, c.y, -1, 1], [c.x, y2, 1, -1], [x2, y2, -1, -1]].forEach(([x, y, sx, sy]) => { ectx.moveTo(x + sx * L, y); ectx.lineTo(x, y); ectx.lineTo(x, y + sy * L); });
+  if (!c.aspect) {
+    const mx = c.x + c.w / 2, my = c.y + c.h / 2, l = L / 2;
+    ectx.moveTo(mx - l, c.y); ectx.lineTo(mx + l, c.y); ectx.moveTo(mx - l, y2); ectx.lineTo(mx + l, y2);
+    ectx.moveTo(c.x, my - l); ectx.lineTo(c.x, my + l); ectx.moveTo(x2, my - l); ectx.lineTo(x2, my + l);
+  }
+  ectx.stroke(); ectx.restore();
+}
+function cropHit(pt) {
+  const c = E.crop, t = 18 * E.k;
+  const inX = pt.x > c.x - t && pt.x < c.x + c.w + t, inY = pt.y > c.y - t && pt.y < c.y + c.h + t;
+  let h = '';
+  if (inX && Math.abs(pt.y - c.y) < t) h += 'n'; else if (inX && Math.abs(pt.y - (c.y + c.h)) < t) h += 's';
+  if (inY && Math.abs(pt.x - c.x) < t) h += 'w'; else if (inY && Math.abs(pt.x - (c.x + c.w)) < t) h += 'e';
+  if (c.aspect && h.length < 2) h = '';   // fixed ratio: corners only
+  if (h) return h;
+  return pt.x > c.x && pt.x < c.x + c.w && pt.y > c.y && pt.y < c.y + c.h ? 'move' : null;
+}
+function cropDrag(pt) {
+  const p = curPhoto(), d = E.crop.drag, o = d.o, dx = pt.x - d.start.x, dy = pt.y - d.start.y;
+  const min = Math.max(40, Math.min(p.w, p.h) * 0.05);
+  let { x, y, w, h } = o;
+  if (d.h === 'move') { x = clamp(o.x + dx, 0, p.w - o.w); y = clamp(o.y + dy, 0, p.h - o.h); }
+  else if (E.crop.aspect) {
+    const a = E.crop.aspect, east = d.h.includes('e'), south = d.h.includes('s');
+    const ax = east ? o.x : o.x + o.w, ay = south ? o.y : o.y + o.h;
+    w = Math.abs((east ? o.x + o.w : o.x) + dx - ax); h = Math.abs((south ? o.y + o.h : o.y) + dy - ay);
+    if (w / Math.max(h, 1e-6) > a) w = h * a; else h = w / a;
+    const maxW = east ? p.w - ax : ax, maxH = south ? p.h - ay : ay;
+    if (w > maxW) { w = maxW; h = w / a; } if (h > maxH) { h = maxH; w = h * a; }
+    if (w < min) { w = min; h = w / a; }
+    x = east ? ax : ax - w; y = south ? ay : ay - h;
+  } else {
+    if (d.h.includes('w')) { const r = o.x + o.w; x = clamp(o.x + dx, 0, r - min); w = r - x; }
+    if (d.h.includes('e')) w = clamp(o.w + dx, min, p.w - o.x);
+    if (d.h.includes('n')) { const b = o.y + o.h; y = clamp(o.y + dy, 0, b - min); h = b - y; }
+    if (d.h.includes('s')) h = clamp(o.h + dy, min, p.h - o.y);
+  }
+  Object.assign(E.crop, { x, y, w, h }); renderEd();
+}
+$('#cropAspect').onclick = e => { const b = e.target.closest('button'); if (b) setCropAspect(b.dataset.v); };
+$('#cropRotL').innerHTML = icon('rotL'); $('#cropRotR').innerHTML = icon('rotR');
+$('#cropRotL').onclick = () => rotateImage(-1);
+$('#cropRotR').onclick = () => rotateImage(1);
+$('#cropCancel').onclick = exitCrop;
+$('#cropApply').onclick = applyCrop;
+
+/* ---------- pointer input ---------- */
+const capture = e => { try { ed.setPointerCapture(e.pointerId); } catch { } };
+function beginDrag(mode, pt, s, g) {
+  E.drag = { mode, start: pt, orig: clone(s), snap: snap(curPhoto()), moved: false, c: g.c, h0: g.sclH };
+  $('#selpop').classList.add('dragging');
+}
 ed.addEventListener('pointerdown', e => {
   const p = curPhoto(); if (!p) return;
-  const pt = toImg(e), lw = baseLw(p) * SIZES[S.size];
+  const pt = toImg(e);
+  if (E.crop) {
+    const h = cropHit(pt);
+    if (h) { E.crop.drag = { h, start: pt, o: { x: E.crop.x, y: E.crop.y, w: E.crop.w, h: E.crop.h } }; capture(e); }
+    return;
+  }
+  // a selected mark can be moved, resized or rotated whatever tool is active
+  const cur = selShape();
+  if (cur) {
+    const g = selGeom(cur), near = q => Math.hypot(pt.x - q.x, pt.y - q.y) < 16 * E.k;
+    const mode = near(g.rotH) ? 'rotate' : near(g.sclH) ? 'scale' : hitOne(cur, pt) ? 'move' : null;
+    if (mode) { beginDrag(mode, pt, cur, g); capture(e); return; }
+  }
   if (S.tool === 'select') {
-    E.sel = hitIndex(p, pt);
-    if (E.sel >= 0) { E.drag = { start: pt, orig: JSON.parse(JSON.stringify(p.shapes[E.sel])), snap: JSON.stringify(p.shapes), moved: false }; ed.setPointerCapture(e.pointerId); }
+    const i = hitIndex(p, pt); setSel(i);
+    if (i >= 0) { beginDrag('move', pt, p.shapes[i], selGeom(p.shapes[i])); capture(e); }
     renderEd(); syncRail(); return;
   }
+  if (cur) setSel(-1);
+  const lw = baseLw(p) * SIZES[S.size];
   if (S.tool === 'text') {
-    askText('Add text', '', t => { if (t) commit(() => p.shapes.push({ type: 'text', x: pt.x, y: pt.y, text: t, color: S.color, fs: lw * 6.5, lw })); });
+    askText('Add text', '', t => { if (t) commit(() => { p.shapes.push({ type: 'text', x: pt.x, y: pt.y, text: t, color: S.color, fs: lw * 6.5, lw, rot: 0 }); E.sel = p.shapes.length - 1; }); });
     return;
   }
   if (S.tool === 'marker') {
-    commit(() => p.shapes.push({ type: 'marker', x: pt.x, y: pt.y, n: markers(p).length + 1, r: baseLw(p) * (3.2 + SIZES[S.size] * 1.6), color: S.color, note: '', lw }));
+    commit(() => { p.shapes.push({ type: 'marker', x: pt.x, y: pt.y, n: markers(p).length + 1, r: baseLw(p) * (3.2 + SIZES[S.size] * 1.6), color: S.color, note: '', lw, rot: 0 }); E.sel = p.shapes.length - 1; });
     const inputs = document.querySelectorAll('#notes textarea'); inputs[inputs.length - 1]?.focus({ preventScroll: true });
     return;
   }
-  ed.setPointerCapture(e.pointerId);
-  E.drawing = S.tool === 'pen' ? { type: 'pen', pts: [[pt.x, pt.y]], color: S.color, lw } : { type: S.tool, x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y, color: S.color, lw };
+  capture(e);
+  E.drawing = S.tool === 'pen' ? { type: 'pen', pts: [[pt.x, pt.y]], color: S.color, lw, rot: 0 } : { type: S.tool, x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y, color: S.color, lw, rot: 0 };
 });
 ed.addEventListener('pointermove', e => {
   const p = curPhoto(); if (!p) return;
+  const pt = toImg(e);
+  if (E.crop) { if (E.crop.drag) cropDrag(pt); return; }
   if (E.drawing) {
-    const pt = toImg(e);
     if (E.drawing.type === 'pen') {
       const l = E.drawing.pts[E.drawing.pts.length - 1];
       if (Math.hypot(pt.x - l[0], pt.y - l[1]) > 2 * E.k) E.drawing.pts.push([pt.x, pt.y]);
@@ -707,30 +942,137 @@ ed.addEventListener('pointermove', e => {
     }
     renderEd();
   } else if (E.drag) {
-    const pt = toImg(e); const dx = pt.x - E.drag.start.x, dy = pt.y - E.drag.start.y;
-    if (!E.drag.moved && Math.hypot(dx, dy) < 3 * E.k) return;
-    if (!E.drag.moved) { E.undo.push(E.drag.snap); E.redo = []; E.drag.moved = true; }
-    moveShape(p.shapes[E.sel], E.drag.orig, dx, dy); renderEd();
+    const d = E.drag, s = selShape(); if (!s) return;
+    const dx = pt.x - d.start.x, dy = pt.y - d.start.y;
+    if (!d.moved && Math.hypot(dx, dy) < 3 * E.k) return;
+    if (!d.moved) { pushUndo(p, d.snap); d.moved = true; }
+    if (d.mode === 'move') moveShape(s, d.orig, dx, dy);
+    else if (d.mode === 'scale') {
+      const k = Math.hypot(pt.x - d.c.x, pt.y - d.c.y) / Math.max(1, Math.hypot(d.h0.x - d.c.x, d.h0.y - d.c.y));
+      scaleShape(s, d.orig, clamp(k, 0.1, 12));
+    } else {
+      let a = normDeg(Math.atan2(pt.y - d.c.y, pt.x - d.c.x) * 180 / Math.PI + 90);
+      const snapTo = Math.round(a / 45) * 45; if (Math.abs(a - snapTo) < 4) a = snapTo;   // snap to 0/45/90…
+      s.rot = normDeg(Math.round(a));
+    }
+    renderEd();
   }
 });
 function endPointer() {
   const p = curPhoto(); if (!p) return;
+  if (E.crop) { E.crop.drag = null; return; }
   if (E.drawing) {
     const d = E.drawing; E.drawing = null;
     const tiny = d.type === 'pen' ? d.pts.length < 2 : Math.hypot(d.x2 - d.x1, d.y2 - d.y1) < 6 * E.k;
-    if (!tiny) commit(() => p.shapes.push(d)); else renderEd();
+    if (!tiny) commit(() => { p.shapes.push(d); if (d.type !== 'pen') E.sel = p.shapes.length - 1; E.sizeBase = null; });
+    else {
+      // a tap (not a drag) on an existing mark selects it
+      const tp = d.type === 'pen' ? { x: d.pts[0][0], y: d.pts[0][1] } : { x: d.x1, y: d.y1 };
+      const i = hitIndex(p, tp); if (i >= 0) setSel(i);
+      renderEd(); syncRail();
+    }
   }
-  if (E.drag) { if (E.drag.moved) changed(); E.drag = null; }
+  if (E.drag) {
+    const moved = E.drag.moved; E.drag = null; E.sizeBase = null;
+    $('#selpop').classList.remove('dragging');
+    if (moved) changed(); else { renderEd(); syncSelPop(); }
+  }
 }
 ed.addEventListener('pointerup', endPointer);
 ed.addEventListener('pointercancel', endPointer);
 ed.addEventListener('dblclick', e => {
-  const p = curPhoto(); if (!p) return;
+  const p = curPhoto(); if (!p || E.crop) return;
   const i = hitIndex(p, toImg(e)); if (i < 0) return;
   const s = p.shapes[i];
-  if (s.type === 'text') askText('Edit text', s.text, t => commit(() => { if (t) s.text = t; else { p.shapes.splice(i, 1); E.sel = -1; } }));
+  if (s.type === 'text') editText(s);
   if (s.type === 'marker') document.querySelectorAll('#notes textarea')[markers(p).indexOf(s)]?.focus();
 });
+function editText(s) {
+  const p = curPhoto();
+  askText('Edit text', s.text, t => commit(() => { const i = p.shapes.indexOf(s); if (t) s.text = t; else if (i >= 0) { p.shapes.splice(i, 1); E.sel = -1; } }));
+}
+
+/* ---------- selection menu ---------- */
+function buildSelPop() {
+  $('#selpop').innerHTML = `
+    <div class="sp-row sp-colors">${COLORS.map(c => `<button class="sw" type="button" data-spcolor="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}"></button>`).join('')}</div>
+    <div class="sp-row"><span class="label">Size</span><input type="range" id="spSize" min="20" max="300" step="1" value="100" aria-label="Size"><output id="spSizeV">100%</output></div>
+    <div class="sp-row" id="spLineRow"><span class="label">Line</span><div class="seg" id="spLine"><button type="button" data-v="s">Thin</button><button type="button" data-v="m">Medium</button><button type="button" data-v="l">Thick</button></div></div>
+    <div class="sp-row"><span class="label">Rotate</span><button class="ibtn" type="button" id="spRotL" title="Rotate 15° left" aria-label="Rotate 15 degrees left">${icon('rotL')}</button><input type="range" id="spRot" min="-180" max="180" step="1" value="0" aria-label="Rotation"><button class="ibtn" type="button" id="spRotR" title="Rotate 15° right" aria-label="Rotate 15 degrees right">${icon('rotR')}</button><output id="spRotV">0°</output></div>
+    <div class="sp-row">
+      <button class="ibtn" type="button" id="spUndo" title="Undo" aria-label="Undo">${icon('undo')}</button>
+      <button class="ibtn" type="button" id="spRedo" title="Redo" aria-label="Redo">${icon('redo')}</button>
+      <span class="sp-gap"></span>
+      <button class="ibtn" type="button" id="spEdit" title="Edit text" aria-label="Edit text">${icon('text')}</button>
+      <button class="ibtn" type="button" id="spDup" title="Duplicate" aria-label="Duplicate">${icon('dup')}</button>
+      <button class="ibtn danger" type="button" id="spDel" title="Delete" aria-label="Delete">${icon('trash')}</button>
+      <button class="ibtn" type="button" id="spClose" title="Done" aria-label="Done, deselect">${icon('check')}</button>
+    </div>`;
+  const pop = $('#selpop');
+  pop.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const p = curPhoto(), s = selShape(); if (!s) return;
+    if (b.dataset.spcolor) { S.color = b.dataset.spcolor; recolorSelected(); }
+    else if (b.closest('#spLine')) commit(() => { s.lw = baseLw(p) * SIZES[b.dataset.v]; });
+    else if (b.id === 'spRotL') commit(() => { s.rot = normDeg((s.rot || 0) - 15); });
+    else if (b.id === 'spRotR') commit(() => { s.rot = normDeg((s.rot || 0) + 15); });
+    else if (b.id === 'spUndo') undo();
+    else if (b.id === 'spRedo') redo();
+    else if (b.id === 'spEdit') editText(s);
+    else if (b.id === 'spDup') duplicateSelected();
+    else if (b.id === 'spDel') deleteSelected();
+    else if (b.id === 'spClose') { setSel(-1); renderEd(); syncRail(); }
+  });
+  $('#spSize').addEventListener('input', e => {
+    const p = curPhoto(), s = selShape(); if (!s) return;
+    if (!E.sizeBase) E.sizeBase = { orig: clone(s), pushed: false };
+    if (!E.sizeBase.pushed) { pushUndo(p); E.sizeBase.pushed = true; }
+    scaleShape(s, E.sizeBase.orig, e.target.value / 100);
+    $('#spSizeV').textContent = e.target.value + '%'; renderEd(); syncRail();
+  });
+  $('#spSize').addEventListener('change', () => { if (E.sizeBase) E.sizeBase.pushed = false; changed(); });
+  $('#spRot').addEventListener('input', e => {
+    const p = curPhoto(), s = selShape(); if (!s) return;
+    if (!E.rotSlide) { pushUndo(p); E.rotSlide = true; }
+    s.rot = +e.target.value; $('#spRotV').textContent = e.target.value + '°'; renderEd(); syncRail();
+  });
+  $('#spRot').addEventListener('change', () => { E.rotSlide = false; changed(); });
+}
+function syncSelPop() {
+  const pop = $('#selpop'), s = selShape();
+  if (!s || E.crop || S.view !== 'markup') { pop.hidden = true; return; }
+  pop.hidden = false;
+  if (!E.sizeBase) { $('#spSize').value = 100; $('#spSizeV').textContent = '100%'; }
+  $('#spRot').value = Math.round(s.rot || 0); $('#spRotV').textContent = `${Math.round(s.rot || 0)}°`;
+  const stroke = s.type !== 'text' && s.type !== 'marker';
+  $('#spLineRow').hidden = !stroke;
+  if (stroke) {
+    const r = s.lw / baseLw(curPhoto());
+    const nearest = Object.entries(SIZES).reduce((a, b) => Math.abs(b[1] - r) < Math.abs(a[1] - r) ? b : a)[0];
+    document.querySelectorAll('#spLine button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === nearest));
+  }
+  $('#spEdit').hidden = s.type !== 'text';
+  document.querySelectorAll('#selpop [data-spcolor]').forEach(b => b.setAttribute('aria-pressed', b.dataset.spcolor === s.color));
+  $('#spUndo').disabled = !E.undo.length; $('#spRedo').disabled = !E.redo.length;
+  placeSelPop();
+}
+function placeSelPop() {
+  const pop = $('#selpop'), s = selShape(); if (pop.hidden || !s) return;
+  const st = $('#stage');
+  if (st.clientWidth < 560) { pop.classList.add('docked'); pop.style.left = pop.style.top = ''; return; }
+  pop.classList.remove('docked');
+  const g = selGeom(s);
+  const pts = [[g.fr.x, g.fr.y], [g.fr.x + g.fr.w, g.fr.y], [g.fr.x, g.fr.y + g.fr.h], [g.fr.x + g.fr.w, g.fr.y + g.fr.h]]
+    .map(([x, y]) => rotPt(x, y, g.c, g.r)).concat([g.rotH])
+    .map(q => ({ x: ed.offsetLeft + q.x / E.k, y: ed.offsetTop + q.y / E.k }));
+  const minY = Math.min(...pts.map(q => q.y)), maxY = Math.max(...pts.map(q => q.y));
+  const cx = (Math.min(...pts.map(q => q.x)) + Math.max(...pts.map(q => q.x))) / 2;
+  const pw = pop.offsetWidth, ph = pop.offsetHeight, sw = st.clientWidth, sh = st.clientHeight;
+  let top = minY - ph - 12;
+  if (top < 8) top = maxY + 12 + ph <= sh - 8 ? maxY + 12 : clamp(top, 8, sh - ph - 8);
+  pop.style.left = clamp(cx - pw / 2, 8, sw - pw - 8) + 'px';
+  pop.style.top = top + 'px';
+}
 
 function renderNotes() {
   const p = curPhoto(); const box = $('#notes');
@@ -763,9 +1105,13 @@ document.addEventListener('keydown', e => {
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (E.crop) { if (e.key === 'Enter') applyCrop(); if (e.key === 'Escape') exitCrop(); return; }
+  if (e.key === 'Escape') { setSel(-1); renderEd(); syncRail(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
+  if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); return; }
+  if (!mod && e.key.toLowerCase() === 'x') { startCrop(); return; }
   const map = { v: 'select', p: 'pen', a: 'arrow', b: 'rect', c: 'ellipse', t: 'text', n: 'marker' };
-  if (!mod && map[e.key.toLowerCase()]) { S.tool = map[e.key.toLowerCase()]; E.sel = -1; syncRail(); renderEd(); }
+  if (!mod && map[e.key.toLowerCase()]) { S.tool = map[e.key.toLowerCase()]; setSel(-1); syncRail(); renderEd(); }
 });
 
 /* ---------- modal ---------- */
@@ -1175,7 +1521,7 @@ async function makeSample(kind) {
 
 /* ---------- boot ---------- */
 $('#brandMark').innerHTML = icon('logo');
-buildRail(); buildCollageControls(); renderChip(); renderTabs();
+buildRail(); buildSelPop(); buildCollageControls(); renderChip(); renderTabs();
 if (IN_ARTIFACT) $('#dropHint').textContent = '…or drop / paste images here';
 (async () => {
   const recs = (await DB.all()) || [];
