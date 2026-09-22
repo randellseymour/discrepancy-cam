@@ -146,9 +146,20 @@ h3{font:600 15px/1.2 var(--f-cond);letter-spacing:.02em;margin:0}
 .check{display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer}
 .check input{accent-color:var(--accent);width:16px;height:16px}
 .divider{height:1px;background:var(--line)}
-.selpop{position:absolute;z-index:5;width:300px;max-width:calc(100% - 16px);background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.35);padding:10px;display:flex;flex-direction:column;gap:9px;transition:opacity .12s}
+.selpop{position:absolute;z-index:5;width:max-content;max-width:calc(100% - 16px);background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.35);padding:4px;display:flex;flex-direction:column;transition:opacity .12s}
 .selpop.dragging{opacity:0;pointer-events:none}
 .selpop.docked{left:8px;right:8px;bottom:8px;top:auto;width:auto;max-width:none}
+.sp-panel{padding:8px 6px 10px;margin-bottom:4px;border-bottom:1px solid var(--line);min-width:280px}
+.sp-rot{display:flex;flex-direction:column;gap:8px}
+.sp-bar{display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none}
+.selpop.docked .sp-bar{justify-content:space-between}
+.sp-tab{width:36px;height:36px;flex:none;border:0;background:transparent;border-radius:8px;display:grid;place-items:center;color:var(--ink-2);cursor:pointer;padding:0}
+.sp-tab:hover{background:var(--surface-2);color:var(--ink)}
+.sp-tab[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
+.sp-tab.danger{color:var(--bad)}
+.sp-tab:disabled{opacity:.35;cursor:not-allowed}
+.sp-sep{width:1px;height:22px;background:var(--line);margin:0 3px;flex:none}
+.sp-dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--ink-3)}
 .sp-row{display:flex;align-items:center;gap:8px;min-width:0}
 .sp-row .label{width:46px;flex:none}
 .sp-row input[type=range]{flex:1;min-width:0;accent-color:var(--accent)}
@@ -417,6 +428,8 @@ const ICON = {
   crop: '<path d="M6 2v14a2 2 0 002 2h14"/><path d="M2 6h14a2 2 0 012 2v14"/>',
   rotL: '<path d="M3 4v5h5"/><path d="M4.5 15a8 8 0 101.9-8.3L3 9"/>',
   rotR: '<path d="M21 4v5h-5"/><path d="M19.5 15a8 8 0 11-1.9-8.3L21 9"/>',
+  size: '<path d="M4 14v6h6"/><path d="M20 10V4h-6"/><path d="M4 20l6.5-6.5M20 4l-6.5 6.5"/>',
+  line: '<path d="M4 6.5h16" stroke-width="1.2"/><path d="M4 12h16" stroke-width="2.4"/><path d="M4 18h16" stroke-width="3.8"/>',
   dim: '<path d="M4 7v10M20 7v10"/><path d="M4 12h16"/><path d="M7.5 9.5L4 12l3.5 2.5M16.5 9.5L20 12l-3.5 2.5"/>',
   dup: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 15V5a1 1 0 011-1h10"/>',
 };
@@ -1086,31 +1099,40 @@ function syncRotUI(s) {
 }
 function buildSelPop() {
   $('#selpop').innerHTML = `
-    <div class="sp-row sp-colors">${COLORS.map(c => `<button class="sw" type="button" data-spcolor="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}"></button>`).join('')}</div>
-    <div class="sp-row"><span class="label">Size</span><input type="range" id="spSize" min="20" max="300" step="1" value="100" aria-label="Size"><output id="spSizeV">100%</output></div>
-    <div class="sp-row" id="spLineRow"><span class="label">Line</span><div class="seg" id="spLine"><button type="button" data-v="s">Thin</button><button type="button" data-v="m">Medium</button><button type="button" data-v="l">Thick</button></div></div>
-    <div class="sp-row"><span class="label">Rotate</span><span class="sp-gap"></span>
-      <input class="input mono sp-deg" id="spRotN" type="number" step="0.1" min="-180" max="180" inputmode="decimal" aria-label="Rotation in degrees"><span class="muted">°</span>
-      <button class="ibtn txt" type="button" id="spRot0" title="Reset rotation to 0°">0°</button></div>
-    <div class="sp-row">
-      <button class="ibtn txt" type="button" data-rstep="-15" title="Rotate −15° (hold to repeat)">−15</button>
-      <button class="ibtn txt" type="button" data-rstep="-1" title="Rotate −1° (hold to repeat)">−1</button>
-      <input type="range" id="spRot" min="-180" max="180" step="0.1" value="0" aria-label="Rotation">
-      <button class="ibtn txt" type="button" data-rstep="1" title="Rotate +1° (hold to repeat)">+1</button>
-      <button class="ibtn txt" type="button" data-rstep="15" title="Rotate +15° (hold to repeat)">+15</button></div>
-    <div class="sp-row">
-      <button class="ibtn" type="button" id="spUndo" title="Undo" aria-label="Undo">${icon('undo')}</button>
-      <button class="ibtn" type="button" id="spRedo" title="Redo" aria-label="Redo">${icon('redo')}</button>
-      <span class="sp-gap"></span>
-      <button class="ibtn" type="button" id="spEdit" title="Edit text" aria-label="Edit text">${icon('text')}</button>
-      <button class="ibtn" type="button" id="spDup" title="Duplicate" aria-label="Duplicate">${icon('dup')}</button>
-      <button class="ibtn danger" type="button" id="spDel" title="Delete" aria-label="Delete">${icon('trash')}</button>
-      <button class="ibtn" type="button" id="spClose" title="Done" aria-label="Done, deselect">${icon('check')}</button>
+    <div class="sp-panel" id="spPanel" hidden>
+      <div data-panel="color" class="sp-row sp-colors">${COLORS.map(c => `<button class="sw" type="button" data-spcolor="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}"></button>`).join('')}</div>
+      <div data-panel="size" class="sp-row"><span class="label">Size</span><input type="range" id="spSize" min="20" max="300" step="1" value="100" aria-label="Size"><output id="spSizeV">100%</output></div>
+      <div data-panel="line" class="sp-row"><span class="label">Line</span><div class="seg" id="spLine"><button type="button" data-v="s">Thin</button><button type="button" data-v="m">Medium</button><button type="button" data-v="l">Thick</button></div></div>
+      <div data-panel="rotate" class="sp-rot">
+        <div class="sp-row"><span class="label">Rotate</span><span class="sp-gap"></span>
+          <input class="input mono sp-deg" id="spRotN" type="number" step="0.1" min="-180" max="180" inputmode="decimal" aria-label="Rotation in degrees"><span class="muted">°</span>
+          <button class="ibtn txt" type="button" id="spRot0" title="Reset rotation to 0°">0°</button></div>
+        <div class="sp-row">
+          <button class="ibtn txt" type="button" data-rstep="-15" title="Rotate −15° (hold to repeat)">−15</button>
+          <button class="ibtn txt" type="button" data-rstep="-1" title="Rotate −1° (hold to repeat)">−1</button>
+          <input type="range" id="spRot" min="-180" max="180" step="0.1" value="0" aria-label="Rotation">
+          <button class="ibtn txt" type="button" data-rstep="1" title="Rotate +1° (hold to repeat)">+1</button>
+          <button class="ibtn txt" type="button" data-rstep="15" title="Rotate +15° (hold to repeat)">+15</button></div>
+      </div>
+    </div>
+    <div class="sp-bar">
+      <button class="sp-tab" type="button" data-tab="color" title="Color" aria-label="Color" aria-expanded="false"><span class="sp-dot" id="spDot"></span></button>
+      <button class="sp-tab" type="button" data-tab="size" title="Size" aria-label="Size" aria-expanded="false">${icon('size')}</button>
+      <button class="sp-tab" type="button" data-tab="line" title="Line thickness" aria-label="Line thickness" aria-expanded="false">${icon('line')}</button>
+      <button class="sp-tab" type="button" data-tab="rotate" title="Rotate" aria-label="Rotate" aria-expanded="false">${icon('rotR')}</button>
+      <span class="sp-sep" aria-hidden="true"></span>
+      <button class="sp-tab" type="button" id="spEdit" title="Edit text" aria-label="Edit text">${icon('markup')}</button>
+      <button class="sp-tab" type="button" id="spDup" title="Duplicate" aria-label="Duplicate">${icon('dup')}</button>
+      <button class="sp-tab" type="button" id="spUndo" title="Undo" aria-label="Undo">${icon('undo')}</button>
+      <button class="sp-tab" type="button" id="spRedo" title="Redo" aria-label="Redo">${icon('redo')}</button>
+      <button class="sp-tab danger" type="button" id="spDel" title="Delete" aria-label="Delete">${icon('trash')}</button>
+      <button class="sp-tab" type="button" id="spClose" title="Done" aria-label="Done, deselect">${icon('check')}</button>
     </div>`;
   const pop = $('#selpop');
   pop.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const p = curPhoto(), s = selShape(); if (!s) return;
+    if (b.dataset.tab) { E.spTab = E.spTab === b.dataset.tab ? null : b.dataset.tab; syncSelPop(); return; }
     if (b.dataset.spcolor) { S.color = b.dataset.spcolor; recolorSelected(); }
     else if (b.closest('#spLine')) commit(() => { s.lw = baseLw(p) * SIZES[b.dataset.v]; });
     else if (b.dataset.rstep) { if (e.detail === 0) commit(() => { s.rot = normDeg(round1((s.rot || 0) + +b.dataset.rstep)); }); }   // keyboard activation; pointer handled below
@@ -1161,7 +1183,12 @@ function syncSelPop() {
   if (!E.sizeBase) { $('#spSize').value = 100; $('#spSizeV').textContent = '100%'; }
   syncRotUI(s);
   const stroke = s.type !== 'text' && s.type !== 'marker';
-  $('#spLineRow').hidden = !stroke;
+  $('#selpop [data-tab="line"]').hidden = !stroke;
+  if (E.spTab === 'line' && !stroke) E.spTab = null;
+  $('#spPanel').hidden = !E.spTab;
+  document.querySelectorAll('#spPanel [data-panel]').forEach(el => el.hidden = el.dataset.panel !== E.spTab);
+  document.querySelectorAll('#selpop [data-tab]').forEach(b => { b.setAttribute('aria-selected', b.dataset.tab === E.spTab); b.setAttribute('aria-expanded', b.dataset.tab === E.spTab); });
+  $('#spDot').style.background = s.color;
   if (stroke) {
     const r = s.lw / baseLw(curPhoto());
     const nearest = Object.entries(SIZES).reduce((a, b) => Math.abs(b[1] - r) < Math.abs(a[1] - r) ? b : a)[0];
