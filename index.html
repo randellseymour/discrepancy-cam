@@ -1,0 +1,1194 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Discrepancy Cam</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E6B73">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --surface-2:#F5F7F9; --ink:#15202A; --ink-2:#4A5866; --ink-3:#7A8794;
+  --line:#D5DCE3; --accent:#0E6B73; --accent-ink:#FFFFFF; --accent-soft:#D5EAEB;
+  --good:#1F8A4C; --bad:#C8322B; --info:#2F6FD6; --stage:#1D242B; --stage-line:#2E3842;
+  --shadow:0 1px 2px rgba(21,32,42,.06),0 4px 16px rgba(21,32,42,.06);
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-cond:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0F1418; --surface:#171E24; --surface-2:#1E262D; --ink:#E6ECF1; --ink-2:#A2AFBB; --ink-3:#6F7C88;
+    --line:#2B3640; --accent:#4FB3BA; --accent-ink:#06282B; --accent-soft:#163A3D;
+    --good:#3DB26E; --bad:#EF5A52; --info:#5C95F0; --stage:#0A0E11; --stage-line:#222C35;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0F1418; --surface:#171E24; --surface-2:#1E262D; --ink:#E6ECF1; --ink-2:#A2AFBB; --ink-3:#6F7C88;
+  --line:#2B3640; --accent:#4FB3BA; --accent-ink:#06282B; --accent-soft:#163A3D;
+  --good:#3DB26E; --bad:#EF5A52; --info:#5C95F0; --stage:#0A0E11; --stage-line:#222C35;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-body);-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- App shell ---------- */
+.app{height:100%;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto 1fr;grid-template-areas:"head nav" "main main"}
+.head{grid-area:head;display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line);min-width:0}
+.brand{display:flex;align-items:center;gap:9px;font:700 17px/1 var(--f-cond);letter-spacing:.01em;white-space:nowrap}
+.brand-mark{width:26px;height:26px;border-radius:6px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center}
+.brand-mark svg{width:17px;height:17px}
+.dr-chip{min-width:0;display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:5px 12px;cursor:pointer;font:600 12.5px/1.2 var(--f-mono);color:var(--ink-2);overflow:hidden}
+.dr-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dr-chip b{color:var(--ink);font-weight:600}
+.nav{grid-area:nav;display:flex;gap:4px;padding:8px 16px 8px 0;background:var(--surface);border-bottom:1px solid var(--line);align-items:center}
+.tab{display:flex;align-items:center;gap:7px;border:0;background:transparent;padding:8px 14px;border-radius:8px;font:600 14px/1 var(--f-cond);letter-spacing:.02em;color:var(--ink-2);cursor:pointer}
+.tab:hover{background:var(--surface-2);color:var(--ink)}
+.tab[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
+.tab .count{font:600 11px/1 var(--f-mono);background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:3px 6px}
+.main{grid-area:main;min-height:0;position:relative}
+.view{position:absolute;inset:0;overflow:auto}
+@media (max-width:760px){
+  .app{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"head" "main" "nav"}
+  .nav{border-bottom:0;border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));justify-content:space-around}
+  .tab{flex-direction:column;gap:4px;font-size:12px;padding:6px 10px;flex:1}
+  .tab .count{position:absolute;margin:-4px 0 0 22px}
+  .tab{position:relative}
+  .brand .word{display:none}
+}
+
+/* ---------- Common bits ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 14px;border-radius:8px;font-weight:600;cursor:pointer;white-space:nowrap;text-decoration:none}
+.btn:hover{border-color:var(--ink-3)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--bad)}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.sm{padding:6px 10px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.label{font:600 11.5px/1.2 var(--f-cond);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.input{width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:7px;padding:8px 10px;min-width:0}
+.input:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+.input.mono{font-family:var(--f-mono);font-size:13.5px}
+textarea.input{resize:vertical;min-height:64px}
+.muted{color:var(--ink-2)}
+h2{font:700 20px/1.2 var(--f-cond);letter-spacing:.01em;margin:0;text-wrap:balance}
+h3{font:600 15px/1.2 var(--f-cond);letter-spacing:.02em;margin:0}
+
+/* ---------- Photos view ---------- */
+.page{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:20px 40px;display:flex;flex-direction:column;gap:18px}
+.report{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.report-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.report-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:860px){.report-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:420px){.report-grid{grid-template-columns:1fr}}
+.capture{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.capture .btn.primary{padding:12px 18px;font-size:15px}
+.drop-hint{color:var(--ink-3);font-size:13px}
+.banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 14px;border-radius:10px;background:var(--accent-soft);color:var(--ink);font-size:13.5px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.card.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.thumb{aspect-ratio:4/3;max-width:100%;background:var(--stage);display:block;width:100%;border:0;padding:0;cursor:pointer}
+.thumb img{width:100%;height:100%;object-fit:contain;display:block}
+.card-meta{padding:9px 10px;display:flex;flex-direction:column;gap:3px;min-height:58px}
+.card-title{font:600 13px/1.3 var(--f-mono);display:flex;justify-content:space-between;gap:6px}
+.card-sub{font-size:12.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-actions{display:flex;border-top:1px solid var(--line)}
+.card-actions button{flex:1;border:0;background:transparent;padding:8px 4px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--ink-2);cursor:pointer}
+.card-actions button+button{border-left:1px solid var(--line)}
+.card-actions button:hover{background:var(--surface-2);color:var(--ink)}
+.card-actions button[aria-pressed="true"]{color:var(--accent)}
+.sel-badge{position:absolute;top:8px;left:8px;min-width:26px;height:26px;border-radius:13px;background:var(--accent);color:var(--accent-ink);font:600 13px/26px var(--f-mono);text-align:center;padding:0 7px}
+.tag{font:600 10.5px/1 var(--f-cond);letter-spacing:.08em;text-transform:uppercase;padding:3px 6px;border-radius:4px;background:var(--surface-2);color:var(--ink-3);border:1px solid var(--line)}
+.empty{border:1.5px dashed var(--line);border-radius:12px;padding:40px 20px;text-align:center;color:var(--ink-2)}
+.selbar{position:sticky;bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--ink);color:var(--bg);border-radius:12px;padding:10px 10px 10px 16px;box-shadow:var(--shadow)}
+.selbar .btn{background:var(--bg);color:var(--ink);border-color:var(--bg)}
+.dropping .page{outline:3px dashed var(--accent);outline-offset:-10px}
+
+/* ---------- Markup view ---------- */
+.markup{height:100%;display:grid;grid-template-columns:68px minmax(0,1fr) 330px;grid-template-rows:minmax(0,1fr)}
+.rail{background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0;overflow-y:auto}
+.rail .grp{display:flex;flex-direction:column;gap:4px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);width:100%}
+.rail .grp:last-child{border-bottom:0}
+.tool{width:44px;height:40px;border-radius:8px;border:0;background:transparent;display:grid;place-items:center;color:var(--ink-2);cursor:pointer}
+.tool:hover{background:var(--surface-2);color:var(--ink)}
+.tool[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+.tool:disabled{opacity:.35;cursor:not-allowed}
+.sw{width:24px;height:24px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--line);cursor:pointer;padding:0}
+.sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
+.sz{width:40px;height:28px;border:0;background:transparent;border-radius:6px;display:grid;place-items:center;cursor:pointer;color:var(--ink-2)}
+.sz i{display:block;background:currentColor;border-radius:4px;width:20px}
+.sz[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+.stage-wrap{display:flex;flex-direction:column;min-height:0;background:var(--stage)}
+.stage-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;color:#C9D3DC;font:600 12.5px/1 var(--f-mono);border-bottom:1px solid var(--stage-line)}
+.stage-bar .btn{background:transparent;border-color:var(--stage-line);color:#C9D3DC}
+.stage{flex:1;min-height:0;display:grid;place-items:center;position:relative;overflow:hidden}
+#ed{touch-action:none;box-shadow:0 6px 30px rgba(0,0,0,.45);display:block}
+.stage-empty{color:#9AA7B3;text-align:center;padding:20px}
+.side{background:var(--surface);border-left:1px solid var(--line);overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px}
+.notes{display:flex;flex-direction:column;gap:8px}
+.note{display:grid;grid-template-columns:28px 1fr 30px;gap:8px;align-items:start}
+.note .num{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:600 12.5px/1 var(--f-mono);margin-top:5px;color:#fff}
+.note textarea{min-height:38px}
+.hint{font-size:12.5px;color:var(--ink-3)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.check{display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer}
+.check input{accent-color:var(--accent);width:16px;height:16px}
+.divider{height:1px;background:var(--line)}
+@media (max-width:960px){
+  .markup{grid-template-columns:1fr;grid-template-rows:auto auto auto;height:auto}
+  .stage-wrap{order:1}.rail{order:2}.side{order:3}
+  .stage{height:min(60vh,560px);flex:none}
+  .rail{flex-direction:row;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;padding:4px 8px;gap:0}
+  .rail .grp{flex-direction:row;border-bottom:0;border-right:1px solid var(--line);width:auto;padding:0 8px}
+  .rail .grp:last-child{border-right:0}
+  .side{border-left:0;overflow:visible}
+}
+
+/* ---------- Collage view ---------- */
+.collage{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 350px;grid-template-rows:minmax(0,1fr)}
+.cstage{background:var(--stage);display:grid;place-items:center;padding:20px;min-height:0;overflow:hidden}
+#cv{max-width:100%;max-height:100%;box-shadow:0 6px 30px rgba(0,0,0,.45);display:block}
+.layouts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.lay{border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:8px;cursor:pointer;display:flex;flex-direction:column;gap:6px;align-items:stretch;font-size:11.5px;color:var(--ink-2);font-weight:600}
+.lay[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);color:var(--accent)}
+.lay .mini{display:grid;gap:3px;aspect-ratio:16/10;max-width:100%}
+.lay .mini i{background:currentColor;opacity:.35;border-radius:2px}
+.slot{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;align-items:start;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2)}
+.slot .n{font:600 12px/22px var(--f-mono);color:var(--ink-3)}
+.slot-fields{display:grid;grid-template-columns:minmax(0,1fr) 108px;gap:6px}
+.slot-fields select.photo{grid-column:1 / -1}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{flex:1;border:0;background:var(--surface-2);padding:7px 6px;font-size:12.5px;font-weight:600;color:var(--ink-2);cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent)}
+@media (max-width:960px){
+  .collage{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto}
+  .cstage{height:auto;min-height:260px}
+  #cv{max-height:60vh}
+}
+
+/* ---------- Overlays ---------- */
+.overlay{position:fixed;inset:0;background:rgba(10,14,17,.6);display:grid;place-items:center;padding:16px;z-index:50}
+.modal{background:var(--surface);border-radius:14px;box-shadow:var(--shadow);width:min(440px,100%);padding:18px;display:flex;flex-direction:column;gap:14px}
+.modal .actions{display:flex;justify-content:flex-end;gap:8px}
+.cam{position:fixed;inset:0;background:#000;z-index:60;display:flex;flex-direction:column}
+.cam video{flex:1;min-height:0;width:100%;object-fit:contain;background:#000}
+.cam-bar{display:flex;align-items:center;justify-content:space-between;padding:16px 20px calc(16px + env(safe-area-inset-bottom,0px));background:#000;color:#fff}
+.cam-top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;color:#fff;font:600 13px/1 var(--f-mono);background:linear-gradient(rgba(0,0,0,.55),transparent)}
+.shutter{width:72px;height:72px;border-radius:50%;border:4px solid #fff;background:rgba(255,255,255,.2);cursor:pointer}
+.shutter:active{background:#fff}
+.cam-btn{width:48px;height:48px;border-radius:50%;border:0;background:rgba(255,255,255,.14);color:#fff;display:grid;place-items:center;cursor:pointer}
+.cam-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:9px;font-weight:600;font-size:13.5px;z-index:70;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app" id="app">
+  <header class="head">
+    <div class="brand"><span class="brand-mark" id="brandMark"></span><span class="word">Discrepancy Cam</span></div>
+    <button class="dr-chip" id="drChip" type="button" title="Edit report details"><span id="drChipText"></span></button>
+  </header>
+  <nav class="nav" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" data-view="photos" id="tab-photos"></button>
+    <button class="tab" role="tab" data-view="markup" id="tab-markup"></button>
+    <button class="tab" role="tab" data-view="collage" id="tab-collage"></button>
+  </nav>
+  <main class="main">
+    <!-- PHOTOS -->
+    <section class="view" id="view-photos" role="tabpanel">
+      <div class="page">
+        <div class="report">
+          <div class="report-head">
+            <h2>Discrepancy report</h2>
+            <span class="hint">These details are stamped on exported images</span>
+          </div>
+          <div class="report-grid">
+            <label class="field"><span class="label">DR number</span><input class="input mono" id="f-dr" placeholder="DR-2291" autocomplete="off"></label>
+            <label class="field"><span class="label">Part / serial</span><input class="input mono" id="f-part" placeholder="4410-032 Rev C · SN 0187" autocomplete="off"></label>
+            <label class="field"><span class="label">Station / location</span><input class="input" id="f-station" placeholder="Receiving inspection" autocomplete="off"></label>
+            <label class="field"><span class="label">Inspector</span><input class="input" id="f-inspector" placeholder="Your name" autocomplete="off"></label>
+          </div>
+        </div>
+        <div class="capture">
+          <button class="btn primary" id="btnTake" type="button"></button>
+          <button class="btn" id="btnLive" type="button" hidden></button>
+          <button class="btn" id="btnImport" type="button"></button>
+          <span class="drop-hint" id="dropHint">…or drop / paste images anywhere</span>
+          <input type="file" id="fileTake" accept="image/*" capture="environment" hidden>
+          <input type="file" id="fileImport" accept="image/*" multiple hidden>
+        </div>
+        <div class="banner" id="sampleBanner" hidden>
+          <span><b>Sample photos loaded</b> so you can try markup and collages. Take your own and these go away when you clear them.</span>
+          <button class="btn sm" id="btnClearSamples" type="button">Clear samples</button>
+        </div>
+        <div class="grid" id="grid"></div>
+        <div class="empty" id="emptyPhotos" hidden>No photos yet. Tap <b>Take photo</b> to start a report.</div>
+        <div class="selbar" id="selbar" hidden>
+          <span id="selText"></span>
+          <div class="row"><button class="btn sm ghost" id="btnClearSel" type="button" style="background:transparent;color:inherit;border-color:transparent">Clear</button><button class="btn sm" id="btnToCollage" type="button">Make collage</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MARKUP -->
+    <section class="view" id="view-markup" role="tabpanel" hidden>
+      <div class="markup">
+        <div class="rail" id="rail"></div>
+        <div class="stage-wrap">
+          <div class="stage-bar">
+            <button class="btn sm" id="btnPrev" type="button" aria-label="Previous photo"></button>
+            <span id="stageTitle">—</span>
+            <button class="btn sm" id="btnNext" type="button" aria-label="Next photo"></button>
+          </div>
+          <div class="stage" id="stage">
+            <canvas id="ed" hidden></canvas>
+            <div class="stage-empty" id="stageEmpty">Take or import a photo to start marking it up.</div>
+          </div>
+        </div>
+        <aside class="side">
+          <div class="field">
+            <span class="label">Finding</span>
+            <textarea class="input" id="f-caption" rows="3" placeholder="What's wrong, where, and how it was found"></textarea>
+          </div>
+          <div class="field">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span class="label">Callouts</span><span class="hint" id="calloutCount"></span></div>
+            <div class="notes" id="notes"></div>
+          </div>
+          <div class="divider"></div>
+          <div class="field">
+            <span class="label">Export</span>
+            <label class="check"><input type="checkbox" id="optFooter" checked> Stamp report details &amp; notes under the image</label>
+          </div>
+          <div class="row" id="markupActions"></div>
+          <p class="hint" id="exportHint"></p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- COLLAGE -->
+    <section class="view" id="view-collage" role="tabpanel" hidden>
+      <div class="collage">
+        <div class="cstage"><canvas id="cv"></canvas></div>
+        <aside class="side">
+          <div class="field"><span class="label">Layout</span><div class="layouts" id="layouts"></div></div>
+          <div class="field">
+            <span class="label">Labels</span>
+            <select class="input" id="preset"></select>
+          </div>
+          <div class="field"><span class="label">Panels</span><div class="notes" id="slots"></div></div>
+          <div class="field">
+            <span class="label">Panel shape</span>
+            <div class="seg" id="segAspect"><button data-v="0.75" type="button">4:3</button><button data-v="1" type="button">Square</button><button data-v="1.333" type="button">3:4</button></div>
+          </div>
+          <div class="field">
+            <span class="label">Fit</span>
+            <div class="seg" id="segFit"><button data-v="cover" type="button">Fill panel</button><button data-v="contain" type="button">Whole photo</button></div>
+          </div>
+          <div class="field">
+            <span class="label">Background</span>
+            <div class="seg" id="segBg"><button data-v="#FFFFFF" type="button">White</button><button data-v="#15202A" type="button">Dark</button></div>
+          </div>
+          <label class="check"><input type="checkbox" id="optTitle" checked> Title bar with DR number &amp; part</label>
+          <label class="field"><span class="label">Title note (optional)</span><input class="input" id="f-ctitle" placeholder="e.g. Hole #3 position vs. drawing"></label>
+          <label class="check"><input type="checkbox" id="optAnno" checked> Include markup on photos</label>
+          <div class="divider"></div>
+          <div class="row" id="collageActions"></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="overlay" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody"></div>
+    <div class="actions"><button class="btn" id="modalCancel" type="button">Cancel</button><button class="btn primary" id="modalOk" type="button">OK</button></div>
+  </div>
+</div>
+
+<div class="cam" id="cam" hidden>
+  <video id="camVideo" playsinline muted autoplay></video>
+  <div class="cam-flash" id="camFlash"></div>
+  <div class="cam-top"><span id="camCount">0 shots</span><span id="camDr"></span></div>
+  <div class="cam-bar">
+    <button class="cam-btn" id="camClose" type="button" aria-label="Done"></button>
+    <button class="shutter" id="camShutter" type="button" aria-label="Take photo"></button>
+    <button class="cam-btn" id="camFlip" type="button" aria-label="Switch camera"></button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+'use strict';
+/* ============================================================
+   Discrepancy Cam — single-file app
+   Sections: utils · storage · photos · markup engine · editor UI
+             · export · collage · camera · boot
+   The markup engine (drawShape / hit / move) is deliberately
+   framework-free so it can be lifted into the instructions app.
+   ============================================================ */
+
+/* ---------- utils ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const IN_ARTIFACT = !!(window.claude && typeof window.claude.use === 'function');
+const MAX_SIDE = 2400;
+const COLORS = ['#E5322D', '#F5B800', '#22A355', '#2F7BEA', '#FFFFFF', '#111111'];
+const COLOR_NAMES = { '#E5322D': 'Red', '#F5B800': 'Yellow', '#22A355': 'Green', '#2F7BEA': 'Blue', '#FFFFFF': 'White', '#111111': 'Black' };
+const SIZES = { s: 0.6, m: 1, l: 1.7 };
+const TONES = { good: '#1F8A4C', bad: '#C8322B', info: '#2F6FD6', neutral: '#15202A' };
+const TONE_NAMES = { good: 'Green', bad: 'Red', info: 'Blue', neutral: 'Dark' };
+
+const ICON = {
+  logo: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><path d="M9.5 13.5l2 2 3.5-4"/>',
+  photos: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/>',
+  markup: '<path d="M4 20l1-4L16 5l3 3L8 19z"/><path d="M13.5 7.5l3 3"/>',
+  collage: '<rect x="3" y="4" width="8" height="16" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/>',
+  select: '<path d="M6 3l12 9-5.5 1.2L10 19z"/>',
+  pen: '<path d="M4 19c3-1 4-4 6-7s4-6 7-7"/><path d="M17 5l2 2"/>',
+  arrow: '<path d="M5 19L19 5"/><path d="M10 5h9v9"/>',
+  rect: '<rect x="4" y="6" width="16" height="12" rx="1"/>',
+  ellipse: '<ellipse cx="12" cy="12" rx="8.5" ry="6.5"/>',
+  text: '<path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/>',
+  marker: '<circle cx="12" cy="12" r="8.5"/><path d="M11 9.2l1.8-1V16"/>',
+  undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/>',
+  redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h3"/>',
+  trash: '<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  live: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/>',
+  upload: '<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 20h16"/>',
+  save: '<path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/>',
+  share: '<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/>',
+  notes: '<path d="M6 4h9l4 4v12H6z"/><path d="M9 12h7M9 16h5"/>',
+  chevL: '<path d="M15 5l-7 7 7 7"/>',
+  chevR: '<path d="M9 5l7 7-7 7"/>',
+  flip: '<path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/>',
+  check: '<path d="M5 12l5 5 9-10"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+};
+const icon = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const isLight = hex => { const n = parseInt(hex.slice(1), 16); const r = n >> 16, g = (n >> 8) & 255, b = n & 255; return (r * 299 + g * 587 + b * 114) / 1000 > 150; };
+const pad2 = n => String(n).padStart(2, '0');
+const fmtDate = t => { const d = new Date(t); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem('drcam.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('drcam.' + k, JSON.stringify(v)); } catch { } },
+};
+let toastT;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2600); }
+
+/* ---------- storage (IndexedDB draft; app still works without it) ---------- */
+const DB = (() => {
+  let p;
+  const open = () => p || (p = new Promise((res, rej) => {
+    try {
+      const r = indexedDB.open('drcam', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('photos', { keyPath: 'id' });
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    } catch (e) { rej(e); }
+  }));
+  async function run(mode, fn) {
+    try {
+      const db = await open();
+      return await new Promise((res, rej) => {
+        const tx = db.transaction('photos', mode); const req = fn(tx.objectStore('photos'));
+        tx.oncomplete = () => res(req && req.result); tx.onerror = () => rej(tx.error);
+      });
+    } catch { return null; }
+  }
+  return { put: v => run('readwrite', s => s.put(v)), del: id => run('readwrite', s => s.delete(id)), all: () => run('readonly', s => s.getAll()) };
+})();
+
+/* ---------- state ---------- */
+const S = {
+  view: 'photos',
+  report: Object.assign({ dr: '', part: '', station: '', inspector: '' }, ls.get('report', {})),
+  photos: [],
+  selOrder: [],          // photo ids chosen for collage, in pick order
+  current: null,         // photo id open in markup
+  tool: 'arrow', color: '#E5322D', size: 'm',
+  footer: ls.get('footer', true),
+  collage: Object.assign({ layout: '2h', preset: 'expected', aspect: 0.75, fit: 'cover', bg: '#FFFFFF', title: true, titleText: '', anno: true, slots: [] }, ls.get('collage', {}), { slots: [] }),
+};
+// Slack deep link: ?dr=DR-123&part=...&station=... pre-fills the report (self-hosted only)
+try {
+  const q = new URLSearchParams(location.search);
+  ['dr', 'part', 'station', 'inspector'].forEach(k => { if (q.get(k)) S.report[k] = q.get(k); });
+} catch { }
+const photoById = id => S.photos.find(p => p.id === id);
+const photoIndex = id => S.photos.findIndex(p => p.id === id);
+
+/* ---------- photos ---------- */
+function loadImage(src) {
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+}
+async function normalize(source) {
+  // Downscale to MAX_SIDE and re-encode so storage and exports stay fast.
+  const w0 = source.naturalWidth || source.videoWidth || source.width, h0 = source.naturalHeight || source.videoHeight || source.height;
+  const k = Math.min(1, MAX_SIDE / Math.max(w0, h0));
+  const w = Math.round(w0 * k), h = Math.round(h0 * k);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(source, 0, 0, w, h);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+  return { blob, w, h };
+}
+async function addPhoto(rec, { persist = true, open = false } = {}) {
+  const p = Object.assign({ id: uid(), created: Date.now(), shapes: [], caption: '', sample: false, name: '' }, rec);
+  p.url = URL.createObjectURL(p.blob);
+  p.img = await loadImage(p.url);
+  S.photos.push(p);
+  refreshThumb(p);
+  if (persist && !p.sample) savePhoto(p);
+  renderGrid(); renderTabs();
+  if (open) openEditor(p.id);
+  return p;
+}
+async function addFiles(files) {
+  const list = [...files].filter(f => f.type.startsWith('image/'));
+  if (!list.length) return;
+  let last;
+  for (const f of list) {
+    try {
+      const url = URL.createObjectURL(f); const img = await loadImage(url);
+      const n = await normalize(img); URL.revokeObjectURL(url);
+      last = await addPhoto({ ...n, name: f.name });
+    } catch { toast(`Couldn't read ${f.name}. Try a JPG or PNG.`); }
+  }
+  if (last) toast(list.length > 1 ? `Added ${list.length} photos` : 'Photo added');
+  return last;
+}
+function savePhoto(p) {
+  if (p.sample) return;
+  DB.put({ id: p.id, created: p.created, name: p.name, w: p.w, h: p.h, blob: p.blob, shapes: p.shapes, caption: p.caption });
+}
+const savers = {};
+function scheduleSave(p) { (savers[p.id] ||= debounce(() => { savePhoto(p); refreshThumb(p); renderGrid(); }, 500))(); }
+function refreshThumb(p) {
+  const k = Math.min(1, 480 / Math.max(p.w, p.h));
+  const c = document.createElement('canvas'); c.width = Math.round(p.w * k); c.height = Math.round(p.h * k);
+  const x = c.getContext('2d'); x.scale(k, k); x.drawImage(p.img, 0, 0, p.w, p.h);
+  p.shapes.forEach(s => drawShape(x, s, k));
+  p.thumb = c.toDataURL('image/jpeg', 0.8);
+}
+function removePhoto(id) {
+  const i = photoIndex(id); if (i < 0) return;
+  const [p] = S.photos.splice(i, 1);
+  URL.revokeObjectURL(p.url); DB.del(id);
+  S.selOrder = S.selOrder.filter(x => x !== id);
+  if (S.current === id) S.current = S.photos[Math.min(i, S.photos.length - 1)]?.id || null;
+  renderGrid(); renderTabs();
+}
+
+/* ---------- markup engine ---------- */
+const FONT = '"IBM Plex Sans", system-ui, sans-serif';
+const MONO = '"IBM Plex Mono", ui-monospace, monospace';
+const measureCtx = document.createElement('canvas').getContext('2d');
+function textBox(s) {
+  measureCtx.font = `600 ${s.fs}px ${FONT}`;
+  const lines = String(s.text).split('\n');
+  const w = Math.max(...lines.map(l => measureCtx.measureText(l).width));
+  const padX = s.fs * 0.4, padY = s.fs * 0.25, lh = s.fs * 1.25;
+  return { lines, x: s.x, y: s.y, w: w + padX * 2, h: lines.length * lh + padY * 2, padX, padY, lh };
+}
+// scale = image px -> device px, only used so shadows look the same at every zoom
+function drawShape(ctx, s, scale = 1) {
+  ctx.save();
+  ctx.strokeStyle = ctx.fillStyle = s.color;
+  ctx.lineWidth = s.lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const halo = isLight(s.color) ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.55)';
+  ctx.shadowColor = halo; ctx.shadowBlur = Math.max(2, (s.lw || 6) * 0.9 * scale);
+  switch (s.type) {
+    case 'pen': {
+      const p = s.pts; ctx.beginPath(); ctx.moveTo(p[0][0], p[0][1]);
+      for (let i = 1; i < p.length - 1; i++) { const mx = (p[i][0] + p[i + 1][0]) / 2, my = (p[i][1] + p[i + 1][1]) / 2; ctx.quadraticCurveTo(p[i][0], p[i][1], mx, my); }
+      const l = p[p.length - 1]; ctx.lineTo(l[0], l[1]); ctx.stroke(); break;
+    }
+    case 'arrow': {
+      const a = Math.atan2(s.y2 - s.y1, s.x2 - s.x1), hl = s.lw * 4.2, len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+      const bx = s.x2 - Math.cos(a) * Math.min(hl * 0.8, len), by = s.y2 - Math.sin(a) * Math.min(hl * 0.8, len);
+      ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s.x2, s.y2);
+      ctx.lineTo(s.x2 - hl * Math.cos(a - 0.45), s.y2 - hl * Math.sin(a - 0.45));
+      ctx.lineTo(s.x2 - hl * Math.cos(a + 0.45), s.y2 - hl * Math.sin(a + 0.45));
+      ctx.closePath(); ctx.fill(); break;
+    }
+    case 'rect': ctx.strokeRect(Math.min(s.x1, s.x2), Math.min(s.y1, s.y2), Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1)); break;
+    case 'ellipse': ctx.beginPath(); ctx.ellipse((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2, Math.abs(s.x2 - s.x1) / 2, Math.abs(s.y2 - s.y1) / 2, 0, 0, Math.PI * 2); ctx.stroke(); break;
+    case 'text': {
+      const b = textBox(s); ctx.shadowBlur = 0;
+      ctx.fillStyle = isLight(s.color) ? 'rgba(15,20,24,.78)' : 'rgba(255,255,255,.88)';
+      roundRect(ctx, b.x, b.y, b.w, b.h, s.fs * 0.2); ctx.fill();
+      ctx.fillStyle = s.color; ctx.font = `600 ${s.fs}px ${FONT}`; ctx.textBaseline = 'top';
+      b.lines.forEach((l, i) => ctx.fillText(l, b.x + b.padX, b.y + b.padY + i * b.lh + s.fs * 0.1));
+      break;
+    }
+    case 'marker': {
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0; ctx.lineWidth = s.r * 0.16; ctx.strokeStyle = isLight(s.color) ? '#111' : '#fff'; ctx.stroke();
+      ctx.fillStyle = isLight(s.color) ? '#111' : '#fff';
+      ctx.font = `600 ${s.r * 1.1}px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(s.n), s.x, s.y + s.r * 0.06); break;
+    }
+  }
+  ctx.restore();
+}
+function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function bbox(s) {
+  switch (s.type) {
+    case 'pen': { const xs = s.pts.map(p => p[0]), ys = s.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
+    case 'text': { const b = textBox(s); return { x: b.x, y: b.y, w: b.w, h: b.h }; }
+    case 'marker': return { x: s.x - s.r, y: s.y - s.r, w: s.r * 2, h: s.r * 2 };
+    default: return { x: Math.min(s.x1, s.x2), y: Math.min(s.y1, s.y2), w: Math.abs(s.x2 - s.x1), h: Math.abs(s.y2 - s.y1) };
+  }
+}
+function distToSeg(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1, l = dx * dx + dy * dy;
+  const t = l ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / l)) : 0;
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+function hitShape(s, x, y, tol) {
+  if (s.type === 'arrow') return distToSeg(x, y, s.x1, s.y1, s.x2, s.y2) < tol + s.lw;
+  if (s.type === 'pen') return s.pts.some((p, i) => i && distToSeg(x, y, s.pts[i - 1][0], s.pts[i - 1][1], p[0], p[1]) < tol + s.lw);
+  const b = bbox(s);
+  if (s.type === 'rect' || s.type === 'ellipse') {
+    // edges only, so you can still grab things drawn inside a box
+    const inOuter = x > b.x - tol && x < b.x + b.w + tol && y > b.y - tol && y < b.y + b.h + tol;
+    const inInner = x > b.x + tol && x < b.x + b.w - tol && y > b.y + tol && y < b.y + b.h - tol;
+    return inOuter && !inInner;
+  }
+  return x > b.x - tol && x < b.x + b.w + tol && y > b.y - tol && y < b.y + b.h + tol;
+}
+function moveShape(s, o, dx, dy) {
+  if (s.type === 'pen') s.pts = o.pts.map(p => [p[0] + dx, p[1] + dy]);
+  else if (s.type === 'text' || s.type === 'marker') { s.x = o.x + dx; s.y = o.y + dy; }
+  else { s.x1 = o.x1 + dx; s.y1 = o.y1 + dy; s.x2 = o.x2 + dx; s.y2 = o.y2 + dy; }
+}
+const markers = p => p.shapes.filter(s => s.type === 'marker');
+function renumber(p) { let n = 0; p.shapes.forEach(s => { if (s.type === 'marker') s.n = ++n; }); }
+
+/* ---------- editor ---------- */
+const ed = $('#ed'), ectx = ed.getContext('2d');
+const E = { view: 1, k: 1, drawing: null, sel: -1, drag: null, undo: [], redo: [] };
+const curPhoto = () => photoById(S.current);
+const baseLw = p => Math.max(p.w, p.h) / 320;
+
+function buildRail() {
+  const tools = [['select', 'Select & move (V)'], ['pen', 'Freehand (P)'], ['arrow', 'Arrow (A)'], ['rect', 'Box (B)'], ['ellipse', 'Circle (C)'], ['text', 'Text (T)'], ['marker', 'Numbered callout (N)']];
+  $('#rail').innerHTML =
+    `<div class="grp">${tools.map(([t, n]) => `<button class="tool" type="button" data-tool="${t}" title="${n}" aria-label="${n}">${icon(t)}</button>`).join('')}</div>` +
+    `<div class="grp">${COLORS.map(c => `<button class="sw" type="button" data-color="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}"></button>`).join('')}</div>` +
+    `<div class="grp">${Object.keys(SIZES).map(z => `<button class="sz" type="button" data-size="${z}" title="Line ${z.toUpperCase()}" aria-label="Line size ${z.toUpperCase()}"><i style="height:${{ s: 2, m: 4, l: 7 }[z]}px"></i></button>`).join('')}</div>` +
+    `<div class="grp"><button class="tool" type="button" id="btnUndo" title="Undo (Ctrl+Z)" aria-label="Undo">${icon('undo')}</button><button class="tool" type="button" id="btnRedo" title="Redo (Ctrl+Y)" aria-label="Redo">${icon('redo')}</button><button class="tool" type="button" id="btnDel" title="Delete selected (Del)" aria-label="Delete selected">${icon('trash')}</button></div>`;
+  $('#rail').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.tool) { S.tool = b.dataset.tool; if (S.tool !== 'select') E.sel = -1; }
+    else if (b.dataset.color) { S.color = b.dataset.color; recolorSelected(); }
+    else if (b.dataset.size) S.size = b.dataset.size;
+    else if (b.id === 'btnUndo') undo();
+    else if (b.id === 'btnRedo') redo();
+    else if (b.id === 'btnDel') deleteSelected();
+    syncRail(); renderEd();
+  });
+}
+function syncRail() {
+  document.querySelectorAll('#rail [data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === S.tool));
+  document.querySelectorAll('#rail [data-color]').forEach(b => b.setAttribute('aria-pressed', b.dataset.color === S.color));
+  document.querySelectorAll('#rail [data-size]').forEach(b => b.setAttribute('aria-pressed', b.dataset.size === S.size));
+  $('#btnUndo').disabled = !E.undo.length; $('#btnRedo').disabled = !E.redo.length; $('#btnDel').disabled = E.sel < 0;
+  ed.style.cursor = S.tool === 'select' ? 'default' : 'crosshair';
+}
+function recolorSelected() {
+  const p = curPhoto(); if (!p || E.sel < 0) return;
+  commit(() => { p.shapes[E.sel].color = S.color; });
+}
+function openEditor(id) {
+  S.current = id; E.undo = []; E.redo = []; E.sel = -1; E.drawing = null;
+  showView('markup');
+}
+function syncEditor() {
+  const p = curPhoto();
+  ed.hidden = !p; $('#stageEmpty').hidden = !!p;
+  const i = p ? photoIndex(p.id) : -1;
+  $('#stageTitle').textContent = p ? `Photo ${i + 1} of ${S.photos.length}${p.sample ? ' · sample' : ''}` : 'No photo';
+  $('#btnPrev').disabled = i <= 0; $('#btnNext').disabled = i < 0 || i >= S.photos.length - 1;
+  $('#f-caption').value = p ? p.caption : ''; $('#f-caption').disabled = !p;
+  fitEd(); renderEd(); renderNotes(); syncRail();
+  document.querySelectorAll('#markupActions button').forEach(b => b.disabled = !p);
+}
+function fitEd() {
+  const p = curPhoto(); if (!p) return;
+  const st = $('#stage'); const aw = st.clientWidth - 32, ah = st.clientHeight - 32;
+  if (aw <= 0 || ah <= 0) return;
+  const s = Math.min(aw / p.w, ah / p.h);
+  const cw = Math.max(1, Math.floor(p.w * s)), ch = Math.max(1, Math.floor(p.h * s));
+  const dpr = window.devicePixelRatio || 1;
+  ed.style.width = cw + 'px'; ed.style.height = ch + 'px';
+  ed.width = Math.round(cw * dpr); ed.height = Math.round(ch * dpr);
+  E.view = ed.width / p.w; E.k = p.w / cw;
+}
+function renderEd() {
+  const p = curPhoto(); if (!p) return;
+  ectx.setTransform(1, 0, 0, 1, 0, 0); ectx.clearRect(0, 0, ed.width, ed.height);
+  ectx.setTransform(E.view, 0, 0, E.view, 0, 0);
+  ectx.drawImage(p.img, 0, 0, p.w, p.h);
+  p.shapes.forEach(s => drawShape(ectx, s, E.view));
+  if (E.drawing) drawShape(ectx, E.drawing, E.view);
+  if (E.sel >= 0 && p.shapes[E.sel]) {
+    const b = bbox(p.shapes[E.sel]), m = 8 * E.k;
+    ectx.save(); ectx.setLineDash([6 * E.k, 4 * E.k]); ectx.lineWidth = 1.5 * E.k; ectx.strokeStyle = '#fff';
+    ectx.shadowColor = 'rgba(0,0,0,.7)'; ectx.shadowBlur = 3;
+    ectx.strokeRect(b.x - m, b.y - m, b.w + m * 2, b.h + m * 2); ectx.restore();
+  }
+}
+const toImg = e => { const r = ed.getBoundingClientRect(); return { x: (e.clientX - r.left) * E.k, y: (e.clientY - r.top) * E.k }; };
+function hitIndex(p, pt) { const tol = 10 * E.k; for (let i = p.shapes.length - 1; i >= 0; i--) if (hitShape(p.shapes[i], pt.x, pt.y, tol)) return i; return -1; }
+function pushUndo(p) { E.undo.push(JSON.stringify(p.shapes)); if (E.undo.length > 100) E.undo.shift(); E.redo = []; }
+function commit(fn) { const p = curPhoto(); if (!p) return; pushUndo(p); fn(); changed(); }
+function changed() { const p = curPhoto(); renderEd(); renderNotes(); syncRail(); if (p) scheduleSave(p); }
+function undo() { const p = curPhoto(); if (!p || !E.undo.length) return; E.redo.push(JSON.stringify(p.shapes)); p.shapes = JSON.parse(E.undo.pop()); E.sel = -1; changed(); }
+function redo() { const p = curPhoto(); if (!p || !E.redo.length) return; E.undo.push(JSON.stringify(p.shapes)); p.shapes = JSON.parse(E.redo.pop()); E.sel = -1; changed(); }
+function deleteSelected() {
+  const p = curPhoto(); if (!p || E.sel < 0) return;
+  commit(() => { p.shapes.splice(E.sel, 1); renumber(p); E.sel = -1; });
+}
+
+ed.addEventListener('pointerdown', e => {
+  const p = curPhoto(); if (!p) return;
+  const pt = toImg(e), lw = baseLw(p) * SIZES[S.size];
+  if (S.tool === 'select') {
+    E.sel = hitIndex(p, pt);
+    if (E.sel >= 0) { E.drag = { start: pt, orig: JSON.parse(JSON.stringify(p.shapes[E.sel])), snap: JSON.stringify(p.shapes), moved: false }; ed.setPointerCapture(e.pointerId); }
+    renderEd(); syncRail(); return;
+  }
+  if (S.tool === 'text') {
+    askText('Add text', '', t => { if (t) commit(() => p.shapes.push({ type: 'text', x: pt.x, y: pt.y, text: t, color: S.color, fs: lw * 6.5, lw })); });
+    return;
+  }
+  if (S.tool === 'marker') {
+    commit(() => p.shapes.push({ type: 'marker', x: pt.x, y: pt.y, n: markers(p).length + 1, r: baseLw(p) * (3.2 + SIZES[S.size] * 1.6), color: S.color, note: '', lw }));
+    const inputs = document.querySelectorAll('#notes textarea'); inputs[inputs.length - 1]?.focus({ preventScroll: true });
+    return;
+  }
+  ed.setPointerCapture(e.pointerId);
+  E.drawing = S.tool === 'pen' ? { type: 'pen', pts: [[pt.x, pt.y]], color: S.color, lw } : { type: S.tool, x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y, color: S.color, lw };
+});
+ed.addEventListener('pointermove', e => {
+  const p = curPhoto(); if (!p) return;
+  if (E.drawing) {
+    const pt = toImg(e);
+    if (E.drawing.type === 'pen') {
+      const l = E.drawing.pts[E.drawing.pts.length - 1];
+      if (Math.hypot(pt.x - l[0], pt.y - l[1]) > 2 * E.k) E.drawing.pts.push([pt.x, pt.y]);
+    } else {
+      E.drawing.x2 = pt.x; E.drawing.y2 = pt.y;
+      if (e.shiftKey && (E.drawing.type === 'rect' || E.drawing.type === 'ellipse')) {
+        const d = Math.max(Math.abs(pt.x - E.drawing.x1), Math.abs(pt.y - E.drawing.y1));
+        E.drawing.x2 = E.drawing.x1 + Math.sign(pt.x - E.drawing.x1) * d; E.drawing.y2 = E.drawing.y1 + Math.sign(pt.y - E.drawing.y1) * d;
+      }
+    }
+    renderEd();
+  } else if (E.drag) {
+    const pt = toImg(e); const dx = pt.x - E.drag.start.x, dy = pt.y - E.drag.start.y;
+    if (!E.drag.moved && Math.hypot(dx, dy) < 3 * E.k) return;
+    if (!E.drag.moved) { E.undo.push(E.drag.snap); E.redo = []; E.drag.moved = true; }
+    moveShape(p.shapes[E.sel], E.drag.orig, dx, dy); renderEd();
+  }
+});
+function endPointer() {
+  const p = curPhoto(); if (!p) return;
+  if (E.drawing) {
+    const d = E.drawing; E.drawing = null;
+    const tiny = d.type === 'pen' ? d.pts.length < 2 : Math.hypot(d.x2 - d.x1, d.y2 - d.y1) < 6 * E.k;
+    if (!tiny) commit(() => p.shapes.push(d)); else renderEd();
+  }
+  if (E.drag) { if (E.drag.moved) changed(); E.drag = null; }
+}
+ed.addEventListener('pointerup', endPointer);
+ed.addEventListener('pointercancel', endPointer);
+ed.addEventListener('dblclick', e => {
+  const p = curPhoto(); if (!p) return;
+  const i = hitIndex(p, toImg(e)); if (i < 0) return;
+  const s = p.shapes[i];
+  if (s.type === 'text') askText('Edit text', s.text, t => commit(() => { if (t) s.text = t; else { p.shapes.splice(i, 1); E.sel = -1; } }));
+  if (s.type === 'marker') document.querySelectorAll('#notes textarea')[markers(p).indexOf(s)]?.focus();
+});
+
+function renderNotes() {
+  const p = curPhoto(); const box = $('#notes');
+  const ms = p ? markers(p) : [];
+  $('#calloutCount').textContent = ms.length ? `${ms.length} on this photo` : '';
+  if (!ms.length) { box.innerHTML = `<p class="hint">Pick the <b>numbered callout</b> tool and tap the photo. Each number gets a note here, and the notes are stamped under the exported image.</p>`; return; }
+  // keep focus/caret when re-rendering while typing
+  const active = document.activeElement; const activeIdx = active && active.dataset && active.dataset.mi;
+  box.innerHTML = ms.map((s, i) => `<div class="note"><span class="num" style="background:${s.color};color:${isLight(s.color) ? '#111' : '#fff'}">${s.n}</span><textarea class="input" rows="1" data-mi="${i}" placeholder="Describe callout ${s.n}">${esc(s.note)}</textarea><button class="tool" type="button" data-del="${i}" aria-label="Remove callout ${s.n}" title="Remove callout" style="width:30px;height:30px">${icon('close')}</button></div>`).join('');
+  if (activeIdx != null) { const t = box.querySelector(`[data-mi="${activeIdx}"]`); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
+}
+$('#notes').addEventListener('input', e => {
+  const t = e.target.closest('textarea'); const p = curPhoto(); if (!t || !p) return;
+  markers(p)[+t.dataset.mi].note = t.value; scheduleSave(p);
+});
+$('#notes').addEventListener('click', e => {
+  const b = e.target.closest('[data-del]'); const p = curPhoto(); if (!b || !p) return;
+  const s = markers(p)[+b.dataset.del];
+  commit(() => { p.shapes.splice(p.shapes.indexOf(s), 1); renumber(p); E.sel = -1; });
+});
+$('#f-caption').addEventListener('input', e => { const p = curPhoto(); if (p) { p.caption = e.target.value; scheduleSave(p); } });
+$('#btnPrev').innerHTML = icon('chevL'); $('#btnNext').innerHTML = icon('chevR');
+$('#btnPrev').onclick = () => { const i = photoIndex(S.current); if (i > 0) openEditor(S.photos[i - 1].id); };
+$('#btnNext').onclick = () => { const i = photoIndex(S.current); if (i < S.photos.length - 1) openEditor(S.photos[i + 1].id); };
+new ResizeObserver(() => { if (S.view === 'markup') { fitEd(); renderEd(); } if (S.view === 'collage') renderCollagePreview(); }).observe($('.main'));
+
+document.addEventListener('keydown', e => {
+  if (!$('#modal').hidden) { if (e.key === 'Escape') closeModal(false); return; }
+  if (S.view !== 'markup' || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
+  const map = { v: 'select', p: 'pen', a: 'arrow', b: 'rect', c: 'ellipse', t: 'text', n: 'marker' };
+  if (!mod && map[e.key.toLowerCase()]) { S.tool = map[e.key.toLowerCase()]; E.sel = -1; syncRail(); renderEd(); }
+});
+
+/* ---------- modal ---------- */
+let modalCb = null;
+function openModal(title, bodyHtml, okLabel, cb, danger) {
+  $('#modalTitle').textContent = title; $('#modalBody').innerHTML = bodyHtml;
+  $('#modalOk').textContent = okLabel; $('#modalOk').className = 'btn ' + (danger ? 'danger' : 'primary');
+  modalCb = cb; $('#modal').hidden = false;
+  const f = $('#modalBody textarea, #modalBody input'); (f || $('#modalOk')).focus();
+}
+function closeModal(ok) { const cb = modalCb; modalCb = null; $('#modal').hidden = true; if (cb) cb(ok); }
+$('#modalOk').onclick = () => closeModal(true);
+$('#modalCancel').onclick = () => closeModal(false);
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(false); });
+function askText(title, value, cb) {
+  openModal(title, `<textarea class="input" id="modalText" rows="3" placeholder="Type a label — Ctrl+Enter to add">${esc(value)}</textarea>`, value ? 'Save' : 'Add', ok => { if (ok) cb($('#modalText').value.trim()); });
+  $('#modalText').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) closeModal(true); });
+}
+function confirmAction(title, msg, okLabel, cb) { openModal(title, `<p class="muted" style="margin:0">${esc(msg)}</p>`, okLabel, ok => ok && cb(), true); }
+
+/* ---------- export ---------- */
+function reportLine(t) {
+  const r = S.report;
+  return [r.dr || 'DR —', r.part, r.station, r.inspector, t ? fmtDate(t) : ''].filter(Boolean).join('  ·  ');
+}
+function wrap(ctx, text, maxW) {
+  const out = [];
+  String(text).split('\n').forEach(par => {
+    let line = '';
+    par.split(/\s+/).forEach(w => { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; });
+    out.push(line);
+  });
+  return out;
+}
+function renderPhotoExport(p, withFooter) {
+  const W = p.w, fs = Math.max(18, Math.round(W / 64)), lh = fs * 1.45, pad = fs * 1.1;
+  const c = document.createElement('canvas'); const x = c.getContext('2d');
+  let rows = [];
+  if (withFooter) {
+    x.font = `400 ${fs}px ${FONT}`;
+    if (p.caption.trim()) rows.push(...wrap(x, p.caption.trim(), W - pad * 2).map(t => ({ t })));
+    markers(p).forEach(m => wrap(x, m.note.trim() || '(no note)', W - pad * 2 - fs * 1.9).forEach((t, i) => rows.push({ t, m: i ? null : m, indent: true })));
+  }
+  const footH = withFooter ? pad * 2 + lh * (1.3 + rows.length) + (rows.length ? fs * 0.5 : 0) : 0;
+  c.width = W; c.height = Math.round(p.h + footH);
+  x.drawImage(p.img, 0, 0, p.w, p.h);
+  p.shapes.forEach(s => drawShape(x, s, 1));
+  if (withFooter) {
+    let y = p.h; x.fillStyle = '#15202A'; x.fillRect(0, y, W, footH);
+    x.fillStyle = '#0E6B73'; x.fillRect(0, y, W, Math.max(3, fs * 0.18));
+    y += pad; x.textBaseline = 'top';
+    x.font = `600 ${fs}px ${MONO}`; x.fillStyle = '#FFFFFF'; x.fillText(reportLine(p.created), pad, y);
+    y += lh * 1.3 + (rows.length ? fs * 0.5 : 0);
+    x.font = `400 ${fs}px ${FONT}`;
+    rows.forEach(r => {
+      if (r.m) {
+        const cx = pad + fs * 0.7, cy = y + fs * 0.62, rr = fs * 0.62;
+        x.fillStyle = r.m.color; x.beginPath(); x.arc(cx, cy, rr, 0, Math.PI * 2); x.fill();
+        x.fillStyle = isLight(r.m.color) ? '#111' : '#fff'; x.font = `600 ${fs * 0.72}px ${MONO}`; x.textAlign = 'center'; x.textBaseline = 'middle';
+        x.fillText(String(r.m.n), cx, cy + fs * 0.03); x.textAlign = 'left'; x.textBaseline = 'top'; x.font = `400 ${fs}px ${FONT}`;
+      }
+      x.fillStyle = r.indent ? '#D8E0E7' : '#FFFFFF';
+      x.fillText(r.t, pad + (r.indent ? fs * 1.9 : 0), y); y += lh;
+    });
+  }
+  return c;
+}
+const toBlob = c => new Promise(r => c.toBlob(r, 'image/png'));
+const slug = s => String(s || '').trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+function fileName(kind, p) {
+  const d = new Date(); const day = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+  return [slug(S.report.dr) || 'DR', slug(S.report.part), kind + (p ? '-' + (photoIndex(p.id) + 1) : ''), day].filter(Boolean).join('_') + '.png';
+}
+function summaryText(p) {
+  const lines = [reportLine(p ? p.created : null)];
+  if (p) {
+    if (p.caption.trim()) lines.push(p.caption.trim());
+    markers(p).forEach(m => lines.push(`(${m.n}) ${m.note.trim() || '—'}`));
+  }
+  return lines.join('\n');
+}
+let downloadsNs;
+async function saveBlob(blob, name) {
+  if (IN_ARTIFACT) {
+    if (downloadsNs === undefined) downloadsNs = await window.claude.use('downloads').catch(() => null);
+    if (!downloadsNs) { toast('Saving isn’t available in this view.'); return; }
+    try { await downloadsNs.save({ filename: name, data: blob }); toast('Saved ' + name); }
+    catch (e) { if (e && e.code !== 'declined') toast('Couldn’t save the image here.'); }
+    return;
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Saved ' + name);
+}
+const canShareFiles = (() => { try { return !IN_ARTIFACT && !!navigator.canShare && navigator.canShare({ files: [new File([new Blob(['x'], { type: 'image/png' })], 'x.png', { type: 'image/png' })] }); } catch { return false; } })();
+async function shareBlob(blob, name, text) {
+  try { await navigator.share({ files: [new File([blob], name, { type: 'image/png' })], title: name, text }); }
+  catch (e) { if (e && e.name !== 'AbortError') toast('Sharing failed — save the image and attach it in Slack instead.'); }
+}
+function copyCanvas(makeCanvas) {
+  // ClipboardItem accepts a promise, which keeps us inside the click gesture
+  try {
+    const item = new ClipboardItem({ 'image/png': toBlob(makeCanvas()) });
+    navigator.clipboard.write([item]).then(() => toast('Image copied — paste it into Slack'), () => toast('Copying images isn’t allowed here. Use Save instead.'));
+  } catch { toast('Copying images isn’t supported in this browser. Use Save instead.'); }
+}
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); toast('Notes copied'); }
+  catch { openModal('Copy notes', `<textarea class="input" id="modalText" rows="6" readonly>${esc(t)}</textarea>`, 'Done', () => { }); $('#modalText').select(); }
+}
+function actionButtons(el, handlers) {
+  const defs = [['save', 'Save PNG', 'primary'], ['share', 'Share to Slack…', ''], ['copy', 'Copy image', ''], ['notes', 'Copy notes', '']];
+  el.innerHTML = defs.filter(([k]) => handlers[k] && !(k === 'share' && !canShareFiles)).map(([k, l, c]) => `<button class="btn sm ${c}" type="button" data-act="${k}">${icon(k)}${l}</button>`).join('');
+  el.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) handlers[b.dataset.act](); });
+}
+actionButtons($('#markupActions'), {
+  save: async () => { const p = curPhoto(); if (p) saveBlob(await toBlob(renderPhotoExport(p, S.footer)), fileName('photo', p)); },
+  share: async () => { const p = curPhoto(); if (p) shareBlob(await toBlob(renderPhotoExport(p, S.footer)), fileName('photo', p), summaryText(p)); },
+  copy: () => { const p = curPhoto(); if (p) copyCanvas(() => renderPhotoExport(p, S.footer)); },
+  notes: () => { const p = curPhoto(); if (p) copyText(summaryText(p)); },
+});
+$('#exportHint').textContent = IN_ARTIFACT
+  ? 'Preview mode: Save works here. Live camera and Share to Slack turn on when the app is self-hosted.'
+  : (canShareFiles ? 'Share opens your phone’s share sheet — pick Slack and the channel.' : 'Copy image, then paste straight into a Slack message.');
+$('#optFooter').checked = S.footer;
+$('#optFooter').onchange = e => { S.footer = e.target.checked; ls.set('footer', S.footer); };
+
+/* ---------- collage ---------- */
+const LAYOUTS = {
+  '2h': { name: 'Side by side', cols: 2, rows: 1, slots: [[0, 0, 1, 1], [1, 0, 1, 1]] },
+  '2v': { name: 'Stacked', cols: 1, rows: 2, slots: [[0, 0, 1, 1], [0, 1, 1, 1]] },
+  '3h': { name: 'Row of 3', cols: 3, rows: 1, slots: [[0, 0, 1, 1], [1, 0, 1, 1], [2, 0, 1, 1]] },
+  '1+2': { name: '1 + 2', cols: 2, rows: 2, slots: [[0, 0, 1, 2], [1, 0, 1, 1], [1, 1, 1, 1]] },
+  '4g': { name: '2 × 2', cols: 2, rows: 2, slots: [[0, 0, 1, 1], [1, 0, 1, 1], [0, 1, 1, 1], [1, 1, 1, 1]] },
+  '6g': { name: '3 × 2', cols: 3, rows: 2, slots: [[0, 0, 1, 1], [1, 0, 1, 1], [2, 0, 1, 1], [0, 1, 1, 1], [1, 1, 1, 1], [2, 1, 1, 1]] },
+};
+const PRESETS = {
+  expected: { name: 'Expected / Actual', fn: (i, n) => i === 0 ? ['Expected', 'good'] : [n > 2 ? `Actual ${i}` : 'Actual', 'bad'] },
+  accept: { name: 'Acceptable / Reject', fn: (i, n) => i === 0 ? ['Acceptable', 'good'] : [n > 2 ? `Reject ${i}` : 'Reject', 'bad'] },
+  before: { name: 'Before / After', fn: (i, n) => i === 0 ? ['Before', 'neutral'] : [n > 2 ? `After ${i}` : 'After', 'info'] },
+  letters: { name: 'A, B, C …', fn: i => [String.fromCharCode(65 + i), 'neutral'] },
+  none: { name: 'No labels', fn: () => ['', 'neutral'] },
+};
+const C = S.collage;
+function saveCollagePrefs() { const { slots, ...rest } = C; ls.set('collage', rest); }
+function syncSlots(reapplyLabels) {
+  const L = LAYOUTS[C.layout], n = L.slots.length;
+  const pool = [...S.selOrder, ...S.photos.map(p => p.id).filter(id => !S.selOrder.includes(id))];
+  const valid = C.slots.map(s => s && photoById(s.photoId) ? s.photoId : null);
+  const used = new Set(valid.filter(Boolean));
+  const next = [];
+  for (let i = 0; i < n; i++) {
+    let id = valid[i];
+    if (!id) { id = pool.find(x => !used.has(x)) || null; if (id) used.add(id); }
+    const old = C.slots[i];
+    const [label, tone] = PRESETS[C.preset].fn(i, n);
+    next.push({ photoId: id, label: old && !reapplyLabels ? old.label : label, tone: old && !reapplyLabels ? old.tone : tone });
+  }
+  C.slots = next;
+}
+function buildCollageControls() {
+  $('#layouts').innerHTML = Object.entries(LAYOUTS).map(([k, L]) =>
+    `<button class="lay" type="button" data-lay="${k}"><span class="mini" style="grid-template-columns:repeat(${L.cols},1fr);grid-template-rows:repeat(${L.rows},1fr)">${L.slots.map(([c, r, cs, rs]) => `<i style="grid-column:${c + 1}/span ${cs};grid-row:${r + 1}/span ${rs}"></i>`).join('')}</span>${L.name}</button>`).join('');
+  $('#preset').innerHTML = Object.entries(PRESETS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
+  $('#layouts').onclick = e => { const b = e.target.closest('[data-lay]'); if (!b) return; C.layout = b.dataset.lay; syncSlots(false); relabelOverflow(); saveCollagePrefs(); renderCollagePanel(); };
+  $('#preset').onchange = e => { C.preset = e.target.value; syncSlots(true); saveCollagePrefs(); renderCollagePanel(); };
+  const seg = (id, key, parse = v => v) => $(id).onclick = e => { const b = e.target.closest('button'); if (!b) return; C[key] = parse(b.dataset.v); saveCollagePrefs(); renderCollagePanel(); };
+  seg('#segAspect', 'aspect', Number); seg('#segFit', 'fit'); seg('#segBg', 'bg');
+  $('#optTitle').onchange = e => { C.title = e.target.checked; saveCollagePrefs(); renderCollagePreview(); };
+  $('#optAnno').onchange = e => { C.anno = e.target.checked; saveCollagePrefs(); renderCollagePreview(); };
+  $('#f-ctitle').oninput = e => { C.titleText = e.target.value; saveCollagePrefs(); renderCollagePreview(); };
+  $('#slots').addEventListener('input', e => {
+    const i = +e.target.closest('[data-slot]').dataset.slot;
+    if (e.target.matches('.photo')) C.slots[i].photoId = e.target.value || null;
+    if (e.target.matches('.lbl')) C.slots[i].label = e.target.value;
+    if (e.target.matches('.tone')) C.slots[i].tone = e.target.value;
+    renderCollagePreview();
+  });
+  actionButtons($('#collageActions'), {
+    save: async () => saveBlob(await toBlob(renderCollage(2400)), fileName('collage')),
+    share: async () => shareBlob(await toBlob(renderCollage(2400)), fileName('collage'), reportLine(null) + (C.titleText ? '\n' + C.titleText : '')),
+    copy: () => copyCanvas(() => renderCollage(2400)),
+  });
+}
+function relabelOverflow() {
+  // new slots from a bigger layout get preset labels; existing edits are kept
+  const n = C.slots.length; C.slots.forEach((s, i) => { if (s.label === '' && C.preset !== 'none') { const [l, t] = PRESETS[C.preset].fn(i, n); s.label = l; s.tone = t; } });
+}
+function renderCollagePanel() {
+  document.querySelectorAll('#layouts [data-lay]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lay === C.layout));
+  $('#preset').value = C.preset;
+  const pressSeg = (id, v) => document.querySelectorAll(id + ' button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v) === String(v)));
+  pressSeg('#segAspect', C.aspect); pressSeg('#segFit', C.fit); pressSeg('#segBg', C.bg);
+  $('#optTitle').checked = C.title; $('#optAnno').checked = C.anno; $('#f-ctitle').value = C.titleText;
+  const opts = sel => `<option value="">— Empty panel —</option>` + S.photos.map((p, i) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>Photo ${i + 1}${p.caption ? ' · ' + esc(p.caption.slice(0, 32)) : ''}${p.sample ? ' (sample)' : ''}</option>`).join('');
+  $('#slots').innerHTML = C.slots.map((s, i) => `<div class="slot" data-slot="${i}"><span class="n">${i + 1}</span><div class="slot-fields">
+    <select class="input photo" aria-label="Photo for panel ${i + 1}">${opts(s.photoId)}</select>
+    <input class="input lbl" value="${esc(s.label)}" placeholder="Label" aria-label="Label for panel ${i + 1}">
+    <select class="input tone" aria-label="Label colour for panel ${i + 1}">${Object.keys(TONES).map(t => `<option value="${t}" ${t === s.tone ? 'selected' : ''}>${TONE_NAMES[t]}</option>`).join('')}</select>
+  </div></div>`).join('');
+  renderCollagePreview();
+}
+function renderCollage(W) {
+  const L = LAYOUTS[C.layout], u = W / 1200, g = 16 * u;
+  const uw = (W - (L.cols + 1) * g) / L.cols, uh = uw * C.aspect;
+  const titleH = C.title ? 64 * u : 0;
+  const H = Math.round(titleH + L.rows * uh + (L.rows + 1) * g);
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = C.bg; x.fillRect(0, 0, W, H);
+  const darkBg = !isLight(C.bg);
+  if (C.title) {
+    x.fillStyle = darkBg ? '#0B1015' : '#15202A'; x.fillRect(0, 0, W, titleH);
+    x.fillStyle = '#0E6B73'; x.fillRect(0, titleH - 4 * u, W, 4 * u);
+    x.textBaseline = 'middle'; x.fillStyle = '#fff';
+    x.font = `600 ${24 * u}px ${MONO}`;
+    const r = S.report; const left = r.dr || 'DR —';
+    x.fillText(left, g, titleH / 2 - 2 * u);
+    let lx = g + x.measureText(left).width + 18 * u;
+    x.font = `500 ${20 * u}px ${FONT}`; x.fillStyle = '#C9D3DC';
+    const mid = [r.part, C.titleText].filter(Boolean).join('  ·  ');
+    const date = fmtDate(Date.now()).slice(0, 10);
+    x.font = `500 ${18 * u}px ${MONO}`; const dw = x.measureText(date).width;
+    x.fillText(date, W - g - dw, titleH / 2 - 2 * u);
+    x.font = `500 ${20 * u}px ${FONT}`;
+    let m = mid; const maxW = W - g - dw - 24 * u - lx;
+    while (m && x.measureText(m).width > maxW) m = m.slice(0, -2);
+    if (m !== mid && m) m = m.replace(/\s*\S?$/, '…');
+    x.fillText(m, lx, titleH / 2 - 2 * u);
+  }
+  L.slots.forEach(([cx, cy, cs, rs], i) => {
+    const rx = g + cx * (uw + g), ry = titleH + g + cy * (uh + g), rw = cs * uw + (cs - 1) * g, rh = rs * uh + (rs - 1) * g;
+    const slot = C.slots[i]; const p = slot && photoById(slot.photoId);
+    x.save(); x.beginPath(); x.rect(rx, ry, rw, rh); x.clip();
+    if (!p) {
+      x.fillStyle = darkBg ? '#232D36' : '#E4E9EE'; x.fillRect(rx, ry, rw, rh);
+      x.fillStyle = darkBg ? '#6F7C88' : '#8894A0'; x.font = `500 ${18 * u}px ${FONT}`; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText('Choose a photo for this panel', rx + rw / 2, ry + rh / 2);
+    } else {
+      x.fillStyle = darkBg ? '#0B1015' : '#1D242B'; x.fillRect(rx, ry, rw, rh);
+      const s = C.fit === 'cover' ? Math.max(rw / p.w, rh / p.h) : Math.min(rw / p.w, rh / p.h);
+      const dw = p.w * s, dh = p.h * s;
+      x.translate(rx + (rw - dw) / 2, ry + (rh - dh) / 2); x.scale(s, s);
+      x.drawImage(p.img, 0, 0, p.w, p.h);
+      if (C.anno) p.shapes.forEach(sh => drawShape(x, sh, s));
+    }
+    x.restore();
+    if (slot && slot.label) {
+      const fs = Math.max(14 * u, Math.min(26 * u, rw * 0.045)); x.font = `700 ${fs}px ${FONT}`;
+      if ('letterSpacing' in x) x.letterSpacing = `${fs * 0.06}px`;
+      const tw = x.measureText(slot.label.toUpperCase()).width; const px = fs * 0.6, py = fs * 0.38;
+      x.fillStyle = TONES[slot.tone] || TONES.neutral;
+      roundRect(x, rx + 12 * u, ry + 12 * u, tw + px * 2, fs + py * 2, fs * 0.25); x.fill();
+      x.fillStyle = '#fff'; x.textBaseline = 'middle'; x.textAlign = 'left';
+      x.fillText(slot.label.toUpperCase(), rx + 12 * u + px, ry + 12 * u + py + fs / 2 + fs * 0.04);
+      if ('letterSpacing' in x) x.letterSpacing = '0px';
+    }
+  });
+  return c;
+}
+function renderCollagePreview() {
+  if (S.view !== 'collage') return;
+  const src = renderCollage(1400); const cv = $('#cv');
+  cv.width = src.width; cv.height = src.height; cv.getContext('2d').drawImage(src, 0, 0);
+}
+
+/* ---------- photos view ---------- */
+function renderGrid() {
+  const grid = $('#grid');
+  $('#emptyPhotos').hidden = S.photos.length > 0;
+  $('#sampleBanner').hidden = !S.photos.some(p => p.sample);
+  grid.innerHTML = S.photos.map((p, i) => {
+    const so = S.selOrder.indexOf(p.id); const ms = markers(p).length;
+    return `<article class="card ${so >= 0 ? 'sel' : ''}" data-id="${p.id}">
+      ${so >= 0 ? `<span class="sel-badge" aria-label="Collage position ${so + 1}">${so + 1}</span>` : ''}
+      <button class="thumb" type="button" data-act="open" aria-label="Mark up photo ${i + 1}"><img src="${p.thumb}" alt=""></button>
+      <div class="card-meta">
+        <div class="card-title"><span>Photo ${i + 1}</span>${p.sample ? '<span class="tag">Sample</span>' : ''}</div>
+        <div class="card-sub">${p.caption ? esc(p.caption) : fmtDate(p.created)}</div>
+        <div class="card-sub">${ms ? `${ms} callout${ms > 1 ? 's' : ''}` : 'No callouts yet'}</div>
+      </div>
+      <div class="card-actions">
+        <button type="button" data-act="open">${icon('markup')}Mark up</button>
+        <button type="button" data-act="sel" aria-pressed="${so >= 0}">${icon(so >= 0 ? 'check' : 'collage')}${so >= 0 ? 'Picked' : 'Pick'}</button>
+        <button type="button" data-act="del" aria-label="Delete photo ${i + 1}" title="Delete" style="flex:0 0 42px">${icon('trash')}</button>
+      </div></article>`;
+  }).join('');
+  const n = S.selOrder.length;
+  $('#selbar').hidden = n === 0;
+  $('#selText').textContent = `${n} picked for a collage`;
+}
+$('#grid').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const id = b.closest('[data-id]').dataset.id;
+  if (b.dataset.act === 'open') openEditor(id);
+  if (b.dataset.act === 'sel') { const i = S.selOrder.indexOf(id); i >= 0 ? S.selOrder.splice(i, 1) : S.selOrder.push(id); renderGrid(); }
+  if (b.dataset.act === 'del') confirmAction('Delete this photo?', 'The photo and its markup are removed from this device. This can’t be undone.', 'Delete', () => removePhoto(id));
+});
+$('#btnClearSel').onclick = () => { S.selOrder = []; renderGrid(); };
+$('#btnToCollage').onclick = () => {
+  const n = S.selOrder.length;
+  C.layout = n <= 2 ? (C.layout === '2v' ? '2v' : '2h') : n === 3 ? (C.layout === '1+2' ? '1+2' : '3h') : n === 4 ? '4g' : '6g';
+  C.slots = []; showView('collage');
+};
+$('#btnClearSamples').onclick = () => { S.photos.filter(p => p.sample).forEach(p => removePhoto(p.id)); ls.set('nosamples', true); };
+
+/* report fields */
+function renderChip() {
+  const r = S.report;
+  $('#drChipText').innerHTML = r.dr || r.part ? `<b>${esc(r.dr || 'DR —')}</b>${r.part ? ' · ' + esc(r.part) : ''}` : 'Add DR details';
+}
+['dr', 'part', 'station', 'inspector'].forEach(k => {
+  const el = $('#f-' + k); el.value = S.report[k];
+  el.addEventListener('input', () => { S.report[k] = el.value; ls.set('report', S.report); renderChip(); });
+});
+$('#drChip').onclick = () => { showView('photos'); $('#f-dr').focus(); };
+
+/* capture */
+$('#btnTake').innerHTML = icon('camera') + 'Take photo';
+$('#btnImport').innerHTML = icon('upload') + 'Import';
+$('#btnLive').innerHTML = icon('live') + 'Live camera';
+$('#btnTake').onclick = () => $('#fileTake').click();
+$('#btnImport').onclick = () => $('#fileImport').click();
+$('#fileTake').onchange = async e => { const p = await addFiles(e.target.files); e.target.value = ''; if (p) openEditor(p.id); };
+$('#fileImport').onchange = async e => { await addFiles(e.target.files); e.target.value = ''; };
+document.addEventListener('paste', e => { const files = [...(e.clipboardData?.files || [])]; if (files.length) { e.preventDefault(); addFiles(files); } });
+let dragDepth = 0;
+document.addEventListener('dragenter', e => { if ([...e.dataTransfer.types].includes('Files')) { dragDepth++; $('#app').classList.add('dropping'); } });
+document.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('#app').classList.remove('dropping'); } });
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; $('#app').classList.remove('dropping'); addFiles(e.dataTransfer.files); showView('photos'); });
+
+/* ---------- live camera (self-hosted only: needs HTTPS + camera permission) ---------- */
+const CAM = { stream: null, facing: 'environment', shots: 0 };
+if (!IN_ARTIFACT && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext) $('#btnLive').hidden = false;
+$('#camClose').innerHTML = icon('check'); $('#camFlip').innerHTML = icon('flip');
+async function startCam() {
+  stopTracks();
+  try {
+    CAM.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: CAM.facing, width: { ideal: 3840 }, height: { ideal: 2160 } }, audio: false });
+    $('#camVideo').srcObject = CAM.stream; $('#cam').hidden = false;
+    $('#camDr').textContent = S.report.dr || '';
+  } catch (e) { $('#cam').hidden = true; toast('Camera blocked. Allow camera access, or use Take photo.'); }
+}
+function stopTracks() { if (CAM.stream) CAM.stream.getTracks().forEach(t => t.stop()); CAM.stream = null; }
+$('#btnLive').onclick = () => { CAM.shots = 0; $('#camCount').textContent = '0 shots'; startCam(); };
+$('#camFlip').onclick = () => { CAM.facing = CAM.facing === 'environment' ? 'user' : 'environment'; startCam(); };
+$('#camClose').onclick = () => { stopTracks(); $('#cam').hidden = true; if (CAM.shots) toast(`${CAM.shots} photo${CAM.shots > 1 ? 's' : ''} added`); };
+$('#camShutter').onclick = async () => {
+  const v = $('#camVideo'); if (!v.videoWidth) return;
+  const f = $('#camFlash'); f.style.opacity = .8; setTimeout(() => f.style.opacity = 0, 60);
+  const n = await normalize(v); await addPhoto({ ...n, name: 'camera.jpg' });
+  CAM.shots++; $('#camCount').textContent = `${CAM.shots} shot${CAM.shots > 1 ? 's' : ''}`;
+};
+
+/* ---------- views ---------- */
+function renderTabs() {
+  const defs = { photos: ['photos', 'Photos', S.photos.length], markup: ['markup', 'Markup', 0], collage: ['collage', 'Collage', 0] };
+  Object.entries(defs).forEach(([k, [ic, name, count]]) => {
+    const t = $('#tab-' + k); t.innerHTML = icon(ic) + `<span>${name}</span>` + (count ? `<span class="count">${count}</span>` : '');
+    t.setAttribute('aria-selected', S.view === k);
+  });
+}
+function showView(v) {
+  S.view = v;
+  ['photos', 'markup', 'collage'].forEach(k => $('#view-' + k).hidden = k !== v);
+  renderTabs();
+  if (v === 'markup') { if (!curPhoto()) S.current = S.photos[0]?.id || null; requestAnimationFrame(syncEditor); }
+  if (v === 'collage') { syncSlots(false); renderCollagePanel(); }
+  if (v === 'photos') renderGrid();
+}
+document.querySelector('.nav').addEventListener('click', e => { const t = e.target.closest('[data-view]'); if (t) showView(t.dataset.view); });
+
+/* ---------- samples (drawn in code; clearly tagged) ---------- */
+async function makeSample(kind) {
+  const W = 1600, H = 1200, c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  let gr = x.createLinearGradient(0, 0, W, H); gr.addColorStop(0, '#3B444C'); gr.addColorStop(1, '#1E2429'); x.fillStyle = gr; x.fillRect(0, 0, W, H);
+  x.globalAlpha = .05; for (let i = 0; i < 300; i++) { x.fillStyle = i % 2 ? '#fff' : '#000'; x.fillRect(Math.random() * W, Math.random() * H, 2, 2); } x.globalAlpha = 1;
+  x.save(); x.shadowColor = 'rgba(0,0,0,.5)'; x.shadowBlur = 40; x.shadowOffsetY = 18;
+  gr = x.createLinearGradient(0, 220, 0, 980); gr.addColorStop(0, '#DDE2E6'); gr.addColorStop(1, '#A9B2B9'); x.fillStyle = gr;
+  roundRect(x, 260, 220, 1080, 760, 34); x.fill(); x.restore();
+  x.save(); roundRect(x, 260, 220, 1080, 760, 34); x.clip(); x.globalAlpha = .08;
+  for (let y = 222; y < 980; y += 3) { x.fillStyle = (y / 3) % 2 ? '#fff' : '#6A737B'; x.fillRect(260, y, 1080, 1); } x.restore();
+  x.strokeStyle = '#88929A'; x.lineWidth = 3; roundRect(x, 260, 220, 1080, 760, 34); x.stroke();
+  const holes = [[380, 340], [1220, 340], [380, 860], [1220, 860]];
+  if (kind === 'actual') holes[2] = [418, 884];
+  holes.forEach(([hx, hy]) => { const rg = x.createRadialGradient(hx - 8, hy - 8, 4, hx, hy, 46); rg.addColorStop(0, '#2A3036'); rg.addColorStop(1, '#0D1013'); x.fillStyle = rg; x.beginPath(); x.arc(hx, hy, 46, 0, Math.PI * 2); x.fill(); x.strokeStyle = '#737D85'; x.lineWidth = 4; x.stroke(); });
+  x.fillStyle = '#12161A'; roundRect(x, 640, 520, 320, 160, 26); x.fill(); x.strokeStyle = '#737D85'; x.lineWidth = 4; x.stroke();
+  x.fillStyle = 'rgba(40,48,55,.55)'; x.font = `600 30px ${MONO}`; x.fillText('4410-032 C', 1030, 940);
+  if (kind === 'actual') {
+    x.strokeStyle = 'rgba(255,255,255,.75)'; x.lineWidth = 3; x.beginPath(); x.moveTo(820, 330); [[870, 348], [905, 352], [960, 372], [1010, 380], [1080, 404]].forEach(([a, b]) => x.lineTo(a, b)); x.stroke();
+    x.strokeStyle = 'rgba(60,66,72,.7)'; x.lineWidth = 2; x.beginPath(); x.moveTo(822, 334); x.lineTo(1078, 408); x.stroke();
+    x.fillStyle = '#EEF2F5'; x.beginPath(); x.ellipse(962, 588, 12, 7, .5, 0, Math.PI * 2); x.fill();
+  }
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+  const lw = 5;
+  const shapes = kind === 'actual' ? [
+    { type: 'ellipse', x1: 790, y1: 300, x2: 1110, y2: 440, color: '#E5322D', lw },
+    { type: 'marker', x: 760, y: 290, n: 1, r: 32, color: '#E5322D', note: 'Surface scratch ~65 mm across mounting face', lw },
+    { type: 'rect', x1: 340, y1: 800, x2: 500, y2: 960, color: '#F5B800', lw },
+    { type: 'marker', x: 540, y: 800, n: 2, r: 32, color: '#F5B800', note: 'Hole #3 offset from drawing position — verify with CMM', lw },
+    { type: 'arrow', x1: 1120, y1: 700, x2: 985, y2: 600, color: '#E5322D', lw },
+    { type: 'marker', x: 1150, y: 720, n: 3, r: 32, color: '#E5322D', note: 'Burr on slot edge', lw },
+  ] : [{ type: 'text', x: 290, y: 160, text: 'Reference part · Rev C', color: '#22A355', fs: 34, lw }];
+  return addPhoto({ blob, w: W, h: H, shapes, sample: true, name: `sample-${kind}.jpg`, caption: kind === 'actual' ? 'Incoming bracket — cosmetic and dimensional issues' : 'Known-good reference' }, { persist: false });
+}
+
+/* ---------- boot ---------- */
+$('#brandMark').innerHTML = icon('logo');
+buildRail(); buildCollageControls(); renderChip(); renderTabs();
+if (IN_ARTIFACT) $('#dropHint').textContent = '…or drop / paste images here';
+(async () => {
+  const recs = (await DB.all()) || [];
+  recs.sort((a, b) => a.created - b.created);
+  for (const r of recs) { try { await addPhoto(r, { persist: false }); } catch { } }
+  if (!recs.length && !ls.get('nosamples', false)) {
+    await makeSample('expected'); const a = await makeSample('actual');
+    S.selOrder = S.photos.map(p => p.id); S.current = a.id;
+  }
+  renderGrid();
+})();
+if (document.fonts) document.fonts.ready.then(() => { S.photos.forEach(refreshThumb); renderGrid(); if (S.view === 'markup') renderEd(); });
+})();
+</script>
+
+</html>
