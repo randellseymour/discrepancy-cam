@@ -161,6 +161,8 @@ h3{font:600 15px/1.2 var(--f-cond);letter-spacing:.02em;margin:0}
 .ibtn:hover{color:var(--ink);border-color:var(--ink-3)}
 .ibtn.danger{color:var(--bad)}
 .ibtn:disabled{opacity:.4;cursor:not-allowed}
+.ibtn.txt{width:auto;min-width:36px;padding:0 7px;font:600 12px/1 var(--f-mono);touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.sp-deg{width:78px;padding:6px 8px;text-align:right}
 .cropbar{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:5;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;width:max-content;max-width:calc(100% - 16px);background:rgba(12,16,20,.9);border:1px solid #33404B;border-radius:12px;padding:6px}
 .cropbar .seg{border-color:#3A4550}
 .cropbar .seg button{background:transparent;color:#C9D3DC}
@@ -415,6 +417,7 @@ const ICON = {
   crop: '<path d="M6 2v14a2 2 0 002 2h14"/><path d="M2 6h14a2 2 0 012 2v14"/>',
   rotL: '<path d="M3 4v5h5"/><path d="M4.5 15a8 8 0 101.9-8.3L3 9"/>',
   rotR: '<path d="M21 4v5h-5"/><path d="M19.5 15a8 8 0 11-1.9-8.3L21 9"/>',
+  dim: '<path d="M4 7v10M20 7v10"/><path d="M4 12h16"/><path d="M7.5 9.5L4 12l3.5 2.5M16.5 9.5L20 12l-3.5 2.5"/>',
   dup: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 15V5a1 1 0 011-1h10"/>',
 };
 const icon = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
@@ -566,6 +569,33 @@ function drawShape(ctx, s, scale = 1) {
       ctx.lineTo(s.x2 - hl * Math.cos(a + 0.45), s.y2 - hl * Math.sin(a + 0.45));
       ctx.closePath(); ctx.fill(); break;
     }
+    case 'dim': {
+      const dx = s.x2 - s.x1, dy = s.y2 - s.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+      const t = s.lw * 3.2, hl = Math.min(s.lw * 3.8, len / 3), hw = hl * 0.42;
+      ctx.beginPath();   // end ticks
+      ctx.moveTo(s.x1 + nx * t, s.y1 + ny * t); ctx.lineTo(s.x1 - nx * t, s.y1 - ny * t);
+      ctx.moveTo(s.x2 + nx * t, s.y2 + ny * t); ctx.lineTo(s.x2 - nx * t, s.y2 - ny * t);
+      ctx.moveTo(s.x1 + ux * hl * 0.8, s.y1 + uy * hl * 0.8); ctx.lineTo(s.x2 - ux * hl * 0.8, s.y2 - uy * hl * 0.8);
+      ctx.stroke();
+      ctx.beginPath();   // arrowheads pointing out to the measured points
+      ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x1 + ux * hl + nx * hw, s.y1 + uy * hl + ny * hw); ctx.lineTo(s.x1 + ux * hl - nx * hw, s.y1 + uy * hl - ny * hw); ctx.closePath();
+      ctx.moveTo(s.x2, s.y2); ctx.lineTo(s.x2 - ux * hl + nx * hw, s.y2 - uy * hl + ny * hw); ctx.lineTo(s.x2 - ux * hl - nx * hw, s.y2 - uy * hl - ny * hw); ctx.closePath();
+      ctx.fill();
+      const label = dimLabel(s);
+      if (label) {
+        const fs = s.fs || s.lw * 5.5; let a = Math.atan2(dy, dx);
+        if (a > Math.PI / 2) a -= Math.PI; if (a < -Math.PI / 2) a += Math.PI;   // keep text readable
+        ctx.translate((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2); ctx.rotate(a);
+        ctx.font = `600 ${fs}px ${MONO}`; ctx.shadowBlur = 0;
+        const w = ctx.measureText(label).width + fs * 0.8, h = fs * 1.45;
+        ctx.fillStyle = isLight(s.color) ? 'rgba(15,20,24,.85)' : 'rgba(255,255,255,.92)';
+        roundRect(ctx, -w / 2, -h / 2, w, h, fs * 0.25); ctx.fill();
+        ctx.lineWidth = Math.max(1, s.lw * 0.35); ctx.strokeStyle = s.color; ctx.stroke();
+        ctx.fillStyle = s.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(label, 0, fs * 0.05);
+      }
+      break;
+    }
     case 'rect': ctx.strokeRect(Math.min(s.x1, s.x2), Math.min(s.y1, s.y2), Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1)); break;
     case 'ellipse': ctx.beginPath(); ctx.ellipse((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2, Math.abs(s.x2 - s.x1) / 2, Math.abs(s.y2 - s.y1) / 2, 0, 0, Math.PI * 2); ctx.stroke(); break;
     case 'text': {
@@ -602,6 +632,7 @@ function distToSeg(px, py, x1, y1, x2, y2) {
 }
 function hitShape(s, x, y, tol) {
   if (s.type === 'arrow') return distToSeg(x, y, s.x1, s.y1, s.x2, s.y2) < tol + s.lw;
+  if (s.type === 'dim') return distToSeg(x, y, s.x1, s.y1, s.x2, s.y2) < tol + Math.max(s.lw * 3, (s.fs || 0) * 0.75);
   if (s.type === 'pen') return s.pts.some((p, i) => i && distToSeg(x, y, s.pts[i - 1][0], s.pts[i - 1][1], p[0], p[1]) < tol + s.lw);
   const b = bbox(s);
   if (s.type === 'rect' || s.type === 'ellipse') {
@@ -631,9 +662,23 @@ function scaleShape(s, o, k) {
   if (s.type === 'pen') s.pts = o.pts.map(([x, y]) => sc(x, y));
   else if (s.type === 'text') { s.fs = o.fs * k; [s.x, s.y] = sc(o.x, o.y); }
   else if (s.type === 'marker') s.r = o.r * k;
-  else { [s.x1, s.y1] = sc(o.x1, o.y1); [s.x2, s.y2] = sc(o.x2, o.y2); }
+  else { [s.x1, s.y1] = sc(o.x1, o.y1); [s.x2, s.y2] = sc(o.x2, o.y2); if (s.type === 'dim' && o.fs) s.fs = o.fs * k; }
 }
 const markers = p => p.shapes.filter(s => s.type === 'marker');
+const round1 = v => Math.round(v * 10) / 10;
+
+/* dimensions: one can be the photo's scale reference; "≈" values are estimated from it */
+const UNIT_MM = { mm: 1, cm: 10, 'µm': 0.001, in: 25.4 };
+const dimLen = s => Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+const dimLabel = s => s.value ? `${s.est ? '≈ ' : ''}${s.value}${s.unit ? ' ' + s.unit : ''}${s.ref ? '  REF' : ''}` : '';
+const fmtNum = (v, unit) => v.toFixed(unit === 'in' ? 3 : v < 10 ? 2 : v < 100 ? 1 : 0);
+function refScale(p, except) {   // mm per image pixel, from the reference dimension
+  const r = p.shapes.find(s => s.type === 'dim' && s.ref && s !== except);
+  const v = r && parseFloat(r.value);
+  return r && isFinite(v) && v > 0 && r.unit in UNIT_MM ? v * UNIT_MM[r.unit] / dimLen(r) : null;
+}
+function estimate(p, s, unit) { const k = refScale(p, s); return k && unit in UNIT_MM ? fmtNum(dimLen(s) * k / UNIT_MM[unit], unit) : null; }
+function refreshDims(p) { p.shapes.forEach(s => { if (s.type === 'dim' && s.est) { const v = estimate(p, s, s.unit); if (v != null) s.value = v; } }); }
 function renumber(p) { let n = 0; p.shapes.forEach(s => { if (s.type === 'marker') s.n = ++n; }); }
 
 /* ---------- editor ---------- */
@@ -645,7 +690,7 @@ const selShape = () => { const p = curPhoto(); return p && E.sel >= 0 ? p.shapes
 const clone = o => JSON.parse(JSON.stringify(o));
 
 function buildRail() {
-  const tools = [['select', 'Select & move (V)'], ['pen', 'Freehand (P)'], ['arrow', 'Arrow (A)'], ['rect', 'Box (B)'], ['ellipse', 'Circle (C)'], ['text', 'Text (T)'], ['marker', 'Numbered callout (N)']];
+  const tools = [['select', 'Select & move (V)'], ['pen', 'Freehand (P)'], ['arrow', 'Arrow (A)'], ['dim', 'Dimension (D)'], ['rect', 'Box (B)'], ['ellipse', 'Circle (C)'], ['text', 'Text (T)'], ['marker', 'Numbered callout (N)']];
   $('#rail').innerHTML =
     `<div class="grp">${tools.map(([t, n]) => `<button class="tool" type="button" data-tool="${t}" title="${n}" aria-label="${n}">${icon(t)}</button>`).join('')}</div>` +
     `<div class="grp"><button class="tool" type="button" id="btnCrop" title="Crop photo (X)" aria-label="Crop photo">${icon('crop')}</button><button class="tool" type="button" id="btnRotL" title="Rotate photo left" aria-label="Rotate photo left">${icon('rotL')}</button><button class="tool" type="button" id="btnRotR" title="Rotate photo right" aria-label="Rotate photo right">${icon('rotR')}</button></div>` +
@@ -722,6 +767,7 @@ function renderEd() {
   ectx.drawImage(p.img, 0, 0, p.w, p.h);
   p.shapes.forEach(s => drawShape(ectx, s, E.view));
   if (E.drawing) drawShape(ectx, E.drawing, E.view);
+  if (E.pending) drawShape(ectx, E.pending, E.view);
   const s = selShape();
   if (s && !E.crop) {
     const g = selGeom(s);
@@ -744,7 +790,7 @@ function hitIndex(p, pt) { for (let i = p.shapes.length - 1; i >= 0; i--) if (hi
 const snap = p => ({ shapes: JSON.stringify(p.shapes), blob: p.blob, w: p.w, h: p.h });
 function pushUndo(p, s = snap(p)) { E.undo.push(s); if (E.undo.length > 60) E.undo.shift(); E.redo = []; }
 function commit(fn) { const p = curPhoto(); if (!p) return; pushUndo(p); fn(); changed(); }
-function changed() { const p = curPhoto(); fitEd(); renderEd(); renderNotes(); syncRail(); syncSelPop(); if (p) scheduleSave(p); }
+function changed() { const p = curPhoto(); if (p) refreshDims(p); fitEd(); renderEd(); renderNotes(); syncRail(); syncSelPop(); if (p) scheduleSave(p); }
 async function restore(p, s) {
   p.shapes = JSON.parse(s.shapes);
   if (s.blob !== p.blob) await setImage(p, s.blob, s.w, s.h);
@@ -935,6 +981,10 @@ ed.addEventListener('pointermove', e => {
       if (Math.hypot(pt.x - l[0], pt.y - l[1]) > 2 * E.k) E.drawing.pts.push([pt.x, pt.y]);
     } else {
       E.drawing.x2 = pt.x; E.drawing.y2 = pt.y;
+      if (e.shiftKey && (E.drawing.type === 'arrow' || E.drawing.type === 'dim')) {   // Shift: snap to 15° steps
+        const d = E.drawing, a = Math.round(Math.atan2(pt.y - d.y1, pt.x - d.x1) / (Math.PI / 12)) * (Math.PI / 12), L = Math.hypot(pt.x - d.x1, pt.y - d.y1);
+        d.x2 = d.x1 + Math.cos(a) * L; d.y2 = d.y1 + Math.sin(a) * L;
+      }
       if (e.shiftKey && (E.drawing.type === 'rect' || E.drawing.type === 'ellipse')) {
         const d = Math.max(Math.abs(pt.x - E.drawing.x1), Math.abs(pt.y - E.drawing.y1));
         E.drawing.x2 = E.drawing.x1 + Math.sign(pt.x - E.drawing.x1) * d; E.drawing.y2 = E.drawing.y1 + Math.sign(pt.y - E.drawing.y1) * d;
@@ -952,8 +1002,8 @@ ed.addEventListener('pointermove', e => {
       scaleShape(s, d.orig, clamp(k, 0.1, 12));
     } else {
       let a = normDeg(Math.atan2(pt.y - d.c.y, pt.x - d.c.x) * 180 / Math.PI + 90);
-      const snapTo = Math.round(a / 45) * 45; if (Math.abs(a - snapTo) < 4) a = snapTo;   // snap to 0/45/90…
-      s.rot = normDeg(Math.round(a));
+      if (!e.shiftKey) { const snapTo = Math.round(a / 45) * 45; if (Math.abs(a - snapTo) < 2.5) a = snapTo; }   // snap to 0/45/90… (Shift = free)
+      s.rot = normDeg(round1(a)); syncRotUI(s);
     }
     renderEd();
   }
@@ -964,7 +1014,8 @@ function endPointer() {
   if (E.drawing) {
     const d = E.drawing; E.drawing = null;
     const tiny = d.type === 'pen' ? d.pts.length < 2 : Math.hypot(d.x2 - d.x1, d.y2 - d.y1) < 6 * E.k;
-    if (!tiny) commit(() => { p.shapes.push(d); if (d.type !== 'pen') E.sel = p.shapes.length - 1; E.sizeBase = null; });
+    if (!tiny && d.type === 'dim') { d.fs = d.lw * 5.5; askDim(p, d, true); }
+    else if (!tiny) commit(() => { p.shapes.push(d); if (d.type !== 'pen') E.sel = p.shapes.length - 1; E.sizeBase = null; });
     else {
       // a tap (not a drag) on an existing mark selects it
       const tp = d.type === 'pen' ? { x: d.pts[0][0], y: d.pts[0][1] } : { x: d.x1, y: d.y1 };
@@ -985,6 +1036,7 @@ ed.addEventListener('dblclick', e => {
   const i = hitIndex(p, toImg(e)); if (i < 0) return;
   const s = p.shapes[i];
   if (s.type === 'text') editText(s);
+  if (s.type === 'dim') askDim(p, s, false);
   if (s.type === 'marker') document.querySelectorAll('#notes textarea')[markers(p).indexOf(s)]?.focus();
 });
 function editText(s) {
@@ -992,13 +1044,60 @@ function editText(s) {
   askText('Edit text', s.text, t => commit(() => { const i = p.shapes.indexOf(s); if (t) s.text = t; else if (i >= 0) { p.shapes.splice(i, 1); E.sel = -1; } }));
 }
 
+function askDim(p, s, isNew) {
+  const unit0 = isNew ? ls.get('unit', 'mm') : (s.unit ?? 'mm');
+  let auto = isNew ? estimate(p, s, unit0) != null : !!s.est;
+  const val0 = isNew ? (estimate(p, s, unit0) || '') : (s.value || '');
+  const hasRef = !!refScale(p, s);
+  const units = [['mm', 'mm'], ['in', 'in'], ['µm', 'µm'], ['cm', 'cm'], ['', 'no unit']];
+  if (isNew) { E.pending = s; renderEd(); }
+  openModal(isNew ? 'Add dimension' : 'Edit dimension', `
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;gap:8px"><input class="input mono" id="dimVal" inputmode="decimal" autocomplete="off" placeholder="e.g. 12.50  or  12.9 (nom 12.5 ±0.1)" value="${esc(val0)}" style="flex:1">
+      <select class="input" id="dimUnit" style="width:96px" aria-label="Unit">${units.map(([v, l]) => `<option value="${v}" ${v === unit0 ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <label class="check"><input type="checkbox" id="dimRef" ${s.ref ? 'checked' : ''}> This is a known size — use it as the scale for this photo</label>
+      <p class="hint" id="dimHint" style="margin:0">${auto ? 'Estimated from the scale reference. Photos distort with angle, so confirm with a gauge before reporting.' : hasRef ? 'Type the measured value.' : 'Tip: mark one dimension you know (a hole spacing, a ruler) as the scale, and new dimensions on this photo are estimated for you.'}</p>
+    </div>`, isNew ? 'Add' : 'Save', ok => {
+    E.pending = null;
+    if (!ok) { renderEd(); return; }
+    const v = $('#dimVal').value.trim(), unit = $('#dimUnit').value;
+    let ref = $('#dimRef').checked;
+    if (!v && isNew) { renderEd(); return; }
+    if (ref && !(parseFloat(v) > 0 && unit in UNIT_MM)) { ref = false; toast('A scale reference needs a number and a unit (mm, in, µm or cm).'); }
+    ls.set('unit', unit);
+    commit(() => {
+      s.value = v; s.unit = unit; s.ref = ref; s.est = auto && !ref && v === estimate(p, s, unit);
+      if (ref) p.shapes.forEach(o => { if (o !== s && o.type === 'dim') o.ref = false; });
+      if (isNew) { p.shapes.push(s); E.sel = p.shapes.length - 1; E.sizeBase = null; }
+    });
+  });
+  const val = $('#dimVal');
+  val.addEventListener('input', () => { auto = false; });
+  val.addEventListener('keydown', e => { if (e.key === 'Enter') closeModal(true); });
+  $('#dimUnit').addEventListener('change', e => { if (auto) { const est = estimate(p, s, e.target.value); if (est != null) val.value = est; } });
+  $('#dimRef').addEventListener('change', e => { if (e.target.checked) auto = false; });
+}
+
 /* ---------- selection menu ---------- */
+function syncRotUI(s) {
+  const v = round1(s.rot || 0), n = $('#spRotN');
+  if (document.activeElement !== n) n.value = v;
+  $('#spRot').value = v;
+}
 function buildSelPop() {
   $('#selpop').innerHTML = `
     <div class="sp-row sp-colors">${COLORS.map(c => `<button class="sw" type="button" data-spcolor="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}"></button>`).join('')}</div>
     <div class="sp-row"><span class="label">Size</span><input type="range" id="spSize" min="20" max="300" step="1" value="100" aria-label="Size"><output id="spSizeV">100%</output></div>
     <div class="sp-row" id="spLineRow"><span class="label">Line</span><div class="seg" id="spLine"><button type="button" data-v="s">Thin</button><button type="button" data-v="m">Medium</button><button type="button" data-v="l">Thick</button></div></div>
-    <div class="sp-row"><span class="label">Rotate</span><button class="ibtn" type="button" id="spRotL" title="Rotate 15° left" aria-label="Rotate 15 degrees left">${icon('rotL')}</button><input type="range" id="spRot" min="-180" max="180" step="1" value="0" aria-label="Rotation"><button class="ibtn" type="button" id="spRotR" title="Rotate 15° right" aria-label="Rotate 15 degrees right">${icon('rotR')}</button><output id="spRotV">0°</output></div>
+    <div class="sp-row"><span class="label">Rotate</span><span class="sp-gap"></span>
+      <input class="input mono sp-deg" id="spRotN" type="number" step="0.1" min="-180" max="180" inputmode="decimal" aria-label="Rotation in degrees"><span class="muted">°</span>
+      <button class="ibtn txt" type="button" id="spRot0" title="Reset rotation to 0°">0°</button></div>
+    <div class="sp-row">
+      <button class="ibtn txt" type="button" data-rstep="-15" title="Rotate −15° (hold to repeat)">−15</button>
+      <button class="ibtn txt" type="button" data-rstep="-1" title="Rotate −1° (hold to repeat)">−1</button>
+      <input type="range" id="spRot" min="-180" max="180" step="0.1" value="0" aria-label="Rotation">
+      <button class="ibtn txt" type="button" data-rstep="1" title="Rotate +1° (hold to repeat)">+1</button>
+      <button class="ibtn txt" type="button" data-rstep="15" title="Rotate +15° (hold to repeat)">+15</button></div>
     <div class="sp-row">
       <button class="ibtn" type="button" id="spUndo" title="Undo" aria-label="Undo">${icon('undo')}</button>
       <button class="ibtn" type="button" id="spRedo" title="Redo" aria-label="Redo">${icon('redo')}</button>
@@ -1014,11 +1113,11 @@ function buildSelPop() {
     const p = curPhoto(), s = selShape(); if (!s) return;
     if (b.dataset.spcolor) { S.color = b.dataset.spcolor; recolorSelected(); }
     else if (b.closest('#spLine')) commit(() => { s.lw = baseLw(p) * SIZES[b.dataset.v]; });
-    else if (b.id === 'spRotL') commit(() => { s.rot = normDeg((s.rot || 0) - 15); });
-    else if (b.id === 'spRotR') commit(() => { s.rot = normDeg((s.rot || 0) + 15); });
+    else if (b.dataset.rstep) { if (e.detail === 0) commit(() => { s.rot = normDeg(round1((s.rot || 0) + +b.dataset.rstep)); }); }   // keyboard activation; pointer handled below
+    else if (b.id === 'spRot0') commit(() => { s.rot = 0; });
     else if (b.id === 'spUndo') undo();
     else if (b.id === 'spRedo') redo();
-    else if (b.id === 'spEdit') editText(s);
+    else if (b.id === 'spEdit') s.type === 'dim' ? askDim(p, s, false) : editText(s);
     else if (b.id === 'spDup') duplicateSelected();
     else if (b.id === 'spDel') deleteSelected();
     else if (b.id === 'spClose') { setSel(-1); renderEd(); syncRail(); }
@@ -1031,19 +1130,36 @@ function buildSelPop() {
     $('#spSizeV').textContent = e.target.value + '%'; renderEd(); syncRail();
   });
   $('#spSize').addEventListener('change', () => { if (E.sizeBase) E.sizeBase.pushed = false; changed(); });
-  $('#spRot').addEventListener('input', e => {
-    const p = curPhoto(), s = selShape(); if (!s) return;
+  // slider and degree box share one undo step per adjustment
+  const liveRot = v => {
+    const p = curPhoto(), s = selShape(); if (!s || !isFinite(v)) return;
     if (!E.rotSlide) { pushUndo(p); E.rotSlide = true; }
-    s.rot = +e.target.value; $('#spRotV').textContent = e.target.value + '°'; renderEd(); syncRail();
+    s.rot = normDeg(round1(v)); syncRotUI(s); renderEd(); syncRail();
+  };
+  const endRot = () => { E.rotSlide = false; changed(); };
+  $('#spRot').addEventListener('input', e => liveRot(+e.target.value));
+  $('#spRot').addEventListener('change', endRot);
+  $('#spRotN').addEventListener('input', e => { if (e.target.value !== '' && e.target.value !== '-') liveRot(parseFloat(e.target.value)); });
+  $('#spRotN').addEventListener('change', endRot);
+  $('#spRotN').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
+  // ±1° / ±15° buttons: press to step, hold to repeat — one undo step per press
+  pop.addEventListener('pointerdown', e => {
+    const b = e.target.closest('[data-rstep]'); const p = curPhoto(), s = selShape(); if (!b || !s) return;
+    e.preventDefault(); pushUndo(p);
+    const step = +b.dataset.rstep;
+    const go = () => { s.rot = normDeg(round1((s.rot || 0) + step)); syncRotUI(s); renderEd(); };
+    let t; const tick = () => { go(); t = setTimeout(tick, 70); };
+    go(); t = setTimeout(tick, 400);
+    const stop = () => { clearTimeout(t); window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); changed(); };
+    window.addEventListener('pointerup', stop); window.addEventListener('pointercancel', stop);
   });
-  $('#spRot').addEventListener('change', () => { E.rotSlide = false; changed(); });
 }
 function syncSelPop() {
   const pop = $('#selpop'), s = selShape();
   if (!s || E.crop || S.view !== 'markup') { pop.hidden = true; return; }
   pop.hidden = false;
   if (!E.sizeBase) { $('#spSize').value = 100; $('#spSizeV').textContent = '100%'; }
-  $('#spRot').value = Math.round(s.rot || 0); $('#spRotV').textContent = `${Math.round(s.rot || 0)}°`;
+  syncRotUI(s);
   const stroke = s.type !== 'text' && s.type !== 'marker';
   $('#spLineRow').hidden = !stroke;
   if (stroke) {
@@ -1051,7 +1167,8 @@ function syncSelPop() {
     const nearest = Object.entries(SIZES).reduce((a, b) => Math.abs(b[1] - r) < Math.abs(a[1] - r) ? b : a)[0];
     document.querySelectorAll('#spLine button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === nearest));
   }
-  $('#spEdit').hidden = s.type !== 'text';
+  $('#spEdit').hidden = s.type !== 'text' && s.type !== 'dim';
+  $('#spEdit').title = s.type === 'dim' ? 'Edit value' : 'Edit text';
   document.querySelectorAll('#selpop [data-spcolor]').forEach(b => b.setAttribute('aria-pressed', b.dataset.spcolor === s.color));
   $('#spUndo').disabled = !E.undo.length; $('#spRedo').disabled = !E.redo.length;
   placeSelPop();
@@ -1110,7 +1227,17 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
   if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); return; }
   if (!mod && e.key.toLowerCase() === 'x') { startCrop(); return; }
-  const map = { v: 'select', p: 'pen', a: 'arrow', b: 'rect', c: 'ellipse', t: 'text', n: 'marker' };
+  const sel = selShape();
+  if (sel && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {   // [ ] rotate 1°, Shift for 0.1°
+    e.preventDefault(); const st = (e.shiftKey ? 0.1 : 1) * (e.code === 'BracketLeft' ? -1 : 1);
+    commit(() => { sel.rot = normDeg(round1((sel.rot || 0) + st)); }); return;
+  }
+  if (sel && e.key.startsWith('Arrow')) {   // nudge 1px, Shift for 10px
+    e.preventDefault(); const d = (e.shiftKey ? 10 : 1) * E.k;
+    const dx = e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0, dy = e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0;
+    commit(() => moveShape(sel, clone(sel), dx, dy)); return;
+  }
+  const map = { v: 'select', p: 'pen', a: 'arrow', d: 'dim', b: 'rect', c: 'ellipse', t: 'text', n: 'marker' };
   if (!mod && map[e.key.toLowerCase()]) { S.tool = map[e.key.toLowerCase()]; setSel(-1); syncRail(); renderEd(); }
 });
 
@@ -1515,6 +1642,8 @@ async function makeSample(kind) {
     { type: 'marker', x: 540, y: 800, n: 2, r: 32, color: '#F5B800', note: 'Hole #3 offset from drawing position — verify with CMM', lw },
     { type: 'arrow', x1: 1120, y1: 700, x2: 985, y2: 600, color: '#E5322D', lw },
     { type: 'marker', x: 1150, y: 720, n: 3, r: 32, color: '#E5322D', note: 'Burr on slot edge', lw },
+    { type: 'dim', x1: 380, y1: 262, x2: 1220, y2: 262, color: '#2F7BEA', lw: 4, fs: 28, value: '84.0', unit: 'mm', ref: true, rot: 0 },
+    { type: 'dim', x1: 418, y1: 952, x2: 1220, y2: 952, color: '#2F7BEA', lw: 4, fs: 28, value: '80.2', unit: 'mm', est: true, rot: 0 },
   ] : [{ type: 'text', x: 290, y: 160, text: 'Reference part · Rev C', color: '#22A355', fs: 34, lw }];
   return addPhoto({ blob, w: W, h: H, shapes, sample: true, name: `sample-${kind}.jpg`, caption: kind === 'actual' ? 'Incoming bracket — cosmetic and dimensional issues' : 'Known-good reference' }, { persist: false });
 }
