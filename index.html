@@ -599,6 +599,9 @@ function drawShape(ctx, s, scale = 1) {
         [q1, q2].forEach(q => { ctx.moveTo(q.x + n.x * t, q.y + n.y * t); ctx.lineTo(q.x - n.x * t, q.y - n.y * t); });
       }
       ctx.moveTo(q1.x + u.x * hl * 0.8, q1.y + u.y * hl * 0.8); ctx.lineTo(q2.x - u.x * hl * 0.8, q2.y - u.y * hl * 0.8);
+      const tp = s.tpos ?? 0.5;   // value slid past an end: carry the line out to it
+      if (tp < 0) { ctx.moveTo(q1.x, q1.y); ctx.lineTo(G.lc.x, G.lc.y); }
+      if (tp > 1) { ctx.moveTo(q2.x, q2.y); ctx.lineTo(G.lc.x, G.lc.y); }
       ctx.stroke();
       ctx.beginPath();   // arrowheads pointing out to the ends
       ctx.moveTo(q1.x, q1.y); ctx.lineTo(q1.x + u.x * hl + n.x * hw, q1.y + u.y * hl + n.y * hw); ctx.lineTo(q1.x + u.x * hl - n.x * hw, q1.y + u.y * hl - n.y * hw); ctx.closePath();
@@ -923,6 +926,10 @@ const clampToImg = (p, q) => ({ x: clamp(q.x, 0, p.w), y: clamp(q.y, 0, p.h) });
 const tolK = () => E.touch ? 1.7 : 1;
 const toImg = e => { const r = ed.getBoundingClientRect(); return { x: (e.clientX - r.left) * E.k, y: (e.clientY - r.top) * E.k }; };
 function hitOne(s, pt) { const q = s.rot ? rotPt(pt.x, pt.y, center(s), -s.rot) : pt; return hitShape(s, q.x, q.y, 10 * E.k * tolK()); }
+function dimLabelAt(p, pt) {
+  for (let i = p.shapes.length - 1; i >= 0; i--) { const s = p.shapes[i]; if (s.type === 'dim' && hitLabel(dimGeom(s), pt.x, pt.y, 6 * E.k * tolK())) return i; }
+  return -1;
+}
 function hitIndex(p, pt) { for (let i = p.shapes.length - 1; i >= 0; i--) if (hitOne(p.shapes[i], pt)) return i; return -1; }
 
 /* ---------- undo: snapshots hold markup JSON plus the image blob (for crop/rotate) ---------- */
@@ -1092,8 +1099,16 @@ ed.addEventListener('pointerdown', e => {
     if (h) { E.crop.drag = { h, start: pt, o: { x: E.crop.x, y: E.crop.y, w: E.crop.w, h: E.crop.h } }; capture(e); }
     return;
   }
-  // a selected mark can be moved, resized or rotated whatever tool is active
+  // grab any dimension's value box, with any tool, to slide it off to the side
   const cur = selShape();
+  const nearEnd = cur && cur.type === 'dim' && Math.min(Math.hypot(pt.x - cur.x1, pt.y - cur.y1), Math.hypot(pt.x - cur.x2, pt.y - cur.y2)) < 16 * E.k * tolK();
+  const li = nearEnd ? -1 : dimLabelAt(p, pt);
+  if (li >= 0) {
+    if (E.sel !== li) setSel(li);
+    beginDrag('dimlabel', pt, p.shapes[li], { c: center(p.shapes[li]), sclH: pt }); capture(e);
+    renderEd(); syncRail(); return;
+  }
+  // a selected mark can be moved, resized or rotated whatever tool is active
   if (cur && cur.type === 'dim') {
     // dimensions: drag an end (A/B), drag the label off to the side, or drag the line to move it
     const R = 16 * E.k * tolK(), dA = Math.hypot(pt.x - cur.x1, pt.y - cur.y1), dB = Math.hypot(pt.x - cur.x2, pt.y - cur.y2);
@@ -1144,6 +1159,9 @@ ed.addEventListener('pointermove', e => {
   const p = curPhoto(); if (!p) return;
   const pt = toImg(e);
   if (E.crop) { if (E.crop.drag) cropDrag(pt); return; }
+  if (!E.drawing && !E.drag && e.pointerType === 'mouse') {   // hover: show the value box can be grabbed
+    ed.style.cursor = dimLabelAt(p, pt) >= 0 ? 'grab' : S.tool === 'select' ? 'default' : 'crosshair';
+  }
   if (E.drawing) {
     if (E.drawing.type === 'pen') {
       const l = E.drawing.pts[E.drawing.pts.length - 1];
@@ -1183,7 +1201,7 @@ ed.addEventListener('pointermove', e => {
       let off = (d.orig.off || 0) + dx * G0.n.x + dy * G0.n.y, t = (d.orig.tpos ?? 0.5) + (dx * G0.u.x + dy * G0.u.y) / G0.len;
       if (Math.abs(off) < 5 * E.k) off = 0;           // click back onto the line
       if (Math.abs(t - 0.5) < 0.04) t = 0.5;          // and back to centre
-      s.off = off; s.tpos = clamp(t, 0.06, 0.94); renderEd(); return;
+      s.off = off; s.tpos = clamp(t, -1.2, 2.2); renderEd(); return;   // past an end, the line extends out to the text
     }
     if (d.mode === 'move') moveShape(s, d.orig, dx, dy);
     else if (d.mode === 'scale') {
@@ -1287,6 +1305,7 @@ function buildSelPop() {
           <input type="range" id="spLen" min="10" max="300" step="0.5" value="100" aria-label="Length">
           <button class="ibtn txt" type="button" data-lstep="1" title="Longer (hold to repeat)" aria-label="Longer">+</button></div>
         <div class="sp-row"><span class="hint" id="spLenV"></span><span class="sp-gap"></span><button class="ibtn txt" type="button" id="spOff0" title="Put the value back on the measured line">Text on line</button></div>
+        <p class="hint" style="margin:0">Drag the value box to move it off to the side or past an end.</p>
         <label class="check"><input type="checkbox" id="spSnap"> Snap ends to detected edges</label>
       </div>
       <div data-panel="rotate" class="sp-rot">
