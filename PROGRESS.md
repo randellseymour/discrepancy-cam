@@ -3,7 +3,7 @@
 _Last updated 2026-09-22_
 
 ## What it is
-A phone-first web app for discrepancy reports: take photos, mark them up, and build side-by-side collages to share in Slack. Live at https://randellseymour.github.io/discrepancy-cam/. Later it will feed a work-instructions app.
+Phone-first web app for discrepancy reports: photograph, mark up, and build side-by-side collages for Slack. Live at https://randellseymour.github.io/discrepancy-cam/.
 
 ## Files
 ```
@@ -35,4 +35,4 @@ PROGRESS.md  this file
 ## Next steps
 1. Test on a phone on the shop floor; fix touch issues found.
 2. Launch from Slack: channel bookmark now, then `/drcam DR-#### part` slash command that opens a pre-filled link.
-3. Split `index.html` into modules (capture / markup / collage) in a Vite + TypeScript repo so the markup engine can be reused in the instructions app.
+3. Split `index.html` into modules (capture / markup / collage) so the markup engine can be reused in the instructions app.
