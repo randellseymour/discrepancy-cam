@@ -159,6 +159,8 @@ h3{font:600 15px/1.2 var(--f-cond);letter-spacing:.02em;margin:0}
 .sp-tab.danger{color:var(--bad)}
 .sp-tab:disabled{opacity:.35;cursor:not-allowed}
 .sp-sep{width:1px;height:22px;background:var(--line);margin:0 3px;flex:none}
+.loupe{position:absolute;z-index:7;width:132px;height:132px;border-radius:50%;border:3px solid #fff;box-shadow:0 6px 24px rgba(0,0,0,.55);pointer-events:none;background:#0A0E11}
+.loupe.snapped{border-color:#3DDC84}
 .sp-dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--ink-3)}
 .sp-row{display:flex;align-items:center;gap:8px;min-width:0}
 .sp-row .label{width:46px;flex:none}
@@ -291,6 +293,7 @@ h3{font:600 15px/1.2 var(--f-cond);letter-spacing:.02em;margin:0}
             <canvas id="ed" hidden></canvas>
             <div class="stage-empty" id="stageEmpty">Take or import a photo to start marking it up.</div>
             <div class="selpop" id="selpop" role="toolbar" aria-label="Selected mark" hidden></div>
+            <canvas class="loupe" id="loupe" aria-hidden="true" hidden></canvas>
             <div class="cropbar" id="cropbar" role="toolbar" aria-label="Crop" hidden>
               <div class="seg" id="cropAspect"><button type="button" data-v="free">Free</button><button type="button" data-v="1:1">1:1</button><button type="button" data-v="4:3">4:3</button><button type="button" data-v="16:9">16:9</button></div>
               <button class="btn sm" type="button" id="cropRotL" title="Rotate photo left" aria-label="Rotate photo left"></button>
@@ -477,6 +480,7 @@ const S = {
   current: null,         // photo id open in markup
   tool: 'arrow', color: '#E5322D', size: 'm',
   footer: ls.get('footer', true),
+  snap: ls.get('snap', true),
   collage: Object.assign({ layout: '2h', preset: 'expected', aspect: 0.75, fit: 'cover', bg: '#FFFFFF', title: true, titleText: '', anno: true, slots: [] }, ls.get('collage', {}), { slots: [] }),
 };
 // Slack deep link: ?dr=DR-123&part=...&station=... pre-fills the report (self-hosted only)
@@ -583,29 +587,31 @@ function drawShape(ctx, s, scale = 1) {
       ctx.closePath(); ctx.fill(); break;
     }
     case 'dim': {
-      const dx = s.x2 - s.x1, dy = s.y2 - s.y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
-      const t = s.lw * 3.2, hl = Math.min(s.lw * 3.8, len / 3), hw = hl * 0.42;
-      ctx.beginPath();   // end ticks
-      ctx.moveTo(s.x1 + nx * t, s.y1 + ny * t); ctx.lineTo(s.x1 - nx * t, s.y1 - ny * t);
-      ctx.moveTo(s.x2 + nx * t, s.y2 + ny * t); ctx.lineTo(s.x2 - nx * t, s.y2 - ny * t);
-      ctx.moveTo(s.x1 + ux * hl * 0.8, s.y1 + uy * hl * 0.8); ctx.lineTo(s.x2 - ux * hl * 0.8, s.y2 - uy * hl * 0.8);
+      // measured points p1/p2; the dimension line q1–q2 can sit off to the side, joined by extension lines
+      const G = dimGeom(s), { u, n, q1, q2 } = G;
+      const t = s.lw * 3.2, hl = Math.min(s.lw * 3.8, G.len / 3), hw = hl * 0.42;
+      ctx.beginPath();
+      if (Math.abs(G.off) > s.lw * 2) {
+        const sg = Math.sign(G.off), gap = s.lw * 1.2, ext = s.lw * 2.5;
+        [[s.x1, s.y1, q1], [s.x2, s.y2, q2]].forEach(([x, y, q]) => { ctx.moveTo(x + n.x * gap * sg, y + n.y * gap * sg); ctx.lineTo(q.x + n.x * ext * sg, q.y + n.y * ext * sg); });
+        ctx.save(); ctx.lineWidth = s.lw * 0.7; ctx.stroke(); ctx.restore(); ctx.beginPath();
+      } else {
+        [q1, q2].forEach(q => { ctx.moveTo(q.x + n.x * t, q.y + n.y * t); ctx.lineTo(q.x - n.x * t, q.y - n.y * t); });
+      }
+      ctx.moveTo(q1.x + u.x * hl * 0.8, q1.y + u.y * hl * 0.8); ctx.lineTo(q2.x - u.x * hl * 0.8, q2.y - u.y * hl * 0.8);
       ctx.stroke();
-      ctx.beginPath();   // arrowheads pointing out to the measured points
-      ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x1 + ux * hl + nx * hw, s.y1 + uy * hl + ny * hw); ctx.lineTo(s.x1 + ux * hl - nx * hw, s.y1 + uy * hl - ny * hw); ctx.closePath();
-      ctx.moveTo(s.x2, s.y2); ctx.lineTo(s.x2 - ux * hl + nx * hw, s.y2 - uy * hl + ny * hw); ctx.lineTo(s.x2 - ux * hl - nx * hw, s.y2 - uy * hl - ny * hw); ctx.closePath();
+      ctx.beginPath();   // arrowheads pointing out to the ends
+      ctx.moveTo(q1.x, q1.y); ctx.lineTo(q1.x + u.x * hl + n.x * hw, q1.y + u.y * hl + n.y * hw); ctx.lineTo(q1.x + u.x * hl - n.x * hw, q1.y + u.y * hl - n.y * hw); ctx.closePath();
+      ctx.moveTo(q2.x, q2.y); ctx.lineTo(q2.x - u.x * hl + n.x * hw, q2.y - u.y * hl + n.y * hw); ctx.lineTo(q2.x - u.x * hl - n.x * hw, q2.y - u.y * hl - n.y * hw); ctx.closePath();
       ctx.fill();
-      const label = dimLabel(s);
-      if (label) {
-        const fs = s.fs || s.lw * 5.5; let a = Math.atan2(dy, dx);
-        if (a > Math.PI / 2) a -= Math.PI; if (a < -Math.PI / 2) a += Math.PI;   // keep text readable
-        ctx.translate((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2); ctx.rotate(a);
-        ctx.font = `600 ${fs}px ${MONO}`; ctx.shadowBlur = 0;
-        const w = ctx.measureText(label).width + fs * 0.8, h = fs * 1.45;
+      if (G.label) {
+        ctx.translate(G.lc.x, G.lc.y); ctx.rotate(G.a);
+        ctx.font = `600 ${G.fs}px ${MONO}`; ctx.shadowBlur = 0;
         ctx.fillStyle = isLight(s.color) ? 'rgba(15,20,24,.85)' : 'rgba(255,255,255,.92)';
-        roundRect(ctx, -w / 2, -h / 2, w, h, fs * 0.25); ctx.fill();
+        roundRect(ctx, -G.bw / 2, -G.bh / 2, G.bw, G.bh, G.fs * 0.25); ctx.fill();
         ctx.lineWidth = Math.max(1, s.lw * 0.35); ctx.strokeStyle = s.color; ctx.stroke();
         ctx.fillStyle = s.color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(label, 0, fs * 0.05);
+        ctx.fillText(G.label, 0, G.fs * 0.05);
       }
       break;
     }
@@ -635,6 +641,11 @@ function bbox(s) {
     case 'pen': { const xs = s.pts.map(p => p[0]), ys = s.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
     case 'text': { const b = textBox(s); return { x: b.x, y: b.y, w: b.w, h: b.h }; }
     case 'marker': return { x: s.x - s.r, y: s.y - s.r, w: s.r * 2, h: s.r * 2 };
+    case 'dim': {
+      const G = dimGeom(s), e = Math.max(G.bw, G.bh) / 2;
+      const xs = [s.x1, s.x2, G.q1.x, G.q2.x, G.lc.x - e, G.lc.x + e], ys = [s.y1, s.y2, G.q1.y, G.q2.y, G.lc.y - e, G.lc.y + e];
+      return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+    }
     default: return { x: Math.min(s.x1, s.x2), y: Math.min(s.y1, s.y2), w: Math.abs(s.x2 - s.x1), h: Math.abs(s.y2 - s.y1) };
   }
 }
@@ -645,7 +656,12 @@ function distToSeg(px, py, x1, y1, x2, y2) {
 }
 function hitShape(s, x, y, tol) {
   if (s.type === 'arrow') return distToSeg(x, y, s.x1, s.y1, s.x2, s.y2) < tol + s.lw;
-  if (s.type === 'dim') return distToSeg(x, y, s.x1, s.y1, s.x2, s.y2) < tol + Math.max(s.lw * 3, (s.fs || 0) * 0.75);
+  if (s.type === 'dim') {
+    const G = dimGeom(s), tt = tol + s.lw * 2;
+    if (distToSeg(x, y, G.q1.x, G.q1.y, G.q2.x, G.q2.y) < tt) return true;
+    if (Math.abs(G.off) > s.lw * 2 && (distToSeg(x, y, s.x1, s.y1, G.q1.x, G.q1.y) < tt || distToSeg(x, y, s.x2, s.y2, G.q2.x, G.q2.y) < tt)) return true;
+    return hitLabel(G, x, y, tol);
+  }
   if (s.type === 'pen') return s.pts.some((p, i) => i && distToSeg(x, y, s.pts[i - 1][0], s.pts[i - 1][1], p[0], p[1]) < tol + s.lw);
   const b = bbox(s);
   if (s.type === 'rect' || s.type === 'ellipse') {
@@ -684,6 +700,54 @@ const round1 = v => Math.round(v * 10) / 10;
 const UNIT_MM = { mm: 1, cm: 10, 'µm': 0.001, in: 25.4 };
 const dimLen = s => Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
 const dimLabel = s => s.value ? `${s.est ? '≈ ' : ''}${s.value}${s.unit ? ' ' + s.unit : ''}${s.ref ? '  REF' : ''}` : '';
+function dimGeom(s) {
+  const dx = s.x2 - s.x1, dy = s.y2 - s.y1, len = Math.hypot(dx, dy) || 1;
+  const u = { x: dx / len, y: dy / len }, n = { x: -u.y, y: u.x }, off = s.off || 0, t = s.tpos ?? 0.5;
+  const q1 = { x: s.x1 + n.x * off, y: s.y1 + n.y * off }, q2 = { x: s.x2 + n.x * off, y: s.y2 + n.y * off };
+  const lc = { x: q1.x + (q2.x - q1.x) * t, y: q1.y + (q2.y - q1.y) * t };
+  let a = Math.atan2(dy, dx); if (a > Math.PI / 2) a -= Math.PI; if (a < -Math.PI / 2) a += Math.PI;   // keep text readable
+  const label = dimLabel(s), fs = s.fs || s.lw * 5.5;
+  measureCtx.font = `600 ${fs}px ${MONO}`;
+  const bw = label ? measureCtx.measureText(label).width + fs * 0.8 : 0, bh = label ? fs * 1.45 : 0;
+  return { len, u, n, off, q1, q2, lc, a, label, fs, bw, bh };
+}
+function hitLabel(G, x, y, tol) {
+  if (!G.label) return false;
+  const dx = x - G.lc.x, dy = y - G.lc.y, c = Math.cos(-G.a), sn = Math.sin(-G.a);
+  return Math.abs(dx * c - dy * sn) < G.bw / 2 + tol && Math.abs(dx * sn + dy * c) < G.bh / 2 + tol;
+}
+// change a dimension's length, holding the locked end (A, B or the middle) in place
+function setDimLen(s, o, L) {
+  const len = dimLen(o) || 1, ux = (o.x2 - o.x1) / len, uy = (o.y2 - o.y1) / len; L = Math.max(2, L);
+  if (s.anchor === 'a') { s.x1 = o.x1; s.y1 = o.y1; s.x2 = o.x1 + ux * L; s.y2 = o.y1 + uy * L; }
+  else if (s.anchor === 'b') { s.x2 = o.x2; s.y2 = o.y2; s.x1 = o.x2 - ux * L; s.y1 = o.y2 - uy * L; }
+  else { const mx = (o.x1 + o.x2) / 2, my = (o.y1 + o.y2) / 2; s.x1 = mx - ux * L / 2; s.y1 = my - uy * L / 2; s.x2 = mx + ux * L / 2; s.y2 = my + uy * L / 2; }
+}
+
+/* edge snapping: strongest nearby Sobel edge, preferring edges that cross the dimension line */
+function grayOf(p) {
+  if (p._gray && p._grayImg === p.img) return p._gray;
+  const c = document.createElement('canvas'); c.width = p.w; c.height = p.h;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(p.img, 0, 0, p.w, p.h);
+  const d = x.getImageData(0, 0, p.w, p.h).data, g = new Uint8ClampedArray(p.w * p.h);
+  for (let i = 0, j = 0; i < g.length; i++, j += 4) g[i] = (d[j] * 77 + d[j + 1] * 150 + d[j + 2] * 29) >> 8;
+  p._gray = g; p._grayImg = p.img; return g;
+}
+function snapEdge(p, pt, dir, R) {
+  const g = grayOf(p), W = p.w, H = p.h, cx = Math.round(pt.x), cy = Math.round(pt.y);
+  let best = null, bestScore = 0;
+  for (let y = Math.max(1, cy - R); y <= Math.min(H - 2, cy + R); y++) for (let x = Math.max(1, cx - R); x <= Math.min(W - 2, cx + R); x++) {
+    const dd = Math.hypot(x - pt.x, y - pt.y); if (dd > R) continue;
+    const i = y * W + x;
+    const gx = -g[i - W - 1] - 2 * g[i - 1] - g[i + W - 1] + g[i - W + 1] + 2 * g[i + 1] + g[i + W + 1];
+    const gy = -g[i - W - 1] - 2 * g[i - W] - g[i - W + 1] + g[i + W - 1] + 2 * g[i + W] + g[i + W + 1];
+    const m = Math.hypot(gx, gy); if (m < 80) continue;   // ignore faint texture
+    const align = dir ? Math.abs(gx * dir.x + gy * dir.y) / m : 1;
+    const sc = m * (0.3 + 0.7 * align) * (1 - 0.6 * dd / R);
+    if (sc > bestScore) { bestScore = sc; best = { x, y }; }
+  }
+  return best;
+}
 const fmtNum = (v, unit) => v.toFixed(unit === 'in' ? 3 : v < 10 ? 2 : v < 100 ? 1 : 0);
 function refScale(p, except) {   // mm per image pixel, from the reference dimension
   const r = p.shapes.find(s => s.type === 'dim' && s.ref && s !== except);
@@ -732,7 +796,7 @@ function syncRail() {
   $('#btnUndo').disabled = !E.undo.length; $('#btnRedo').disabled = !E.redo.length; $('#btnDel').disabled = !selShape();
   ed.style.cursor = E.crop ? 'move' : S.tool === 'select' ? 'default' : 'crosshair';
 }
-function setSel(i) { E.sel = i; E.sizeBase = null; E.rotSlide = false; syncSelPop(); }
+function setSel(i) { E.sel = i; E.sizeBase = null; E.lenBase = null; E.rotSlide = false; syncSelPop(); }
 function recolorSelected() { const s = selShape(); if (s) commit(() => { s.color = S.color; }); }
 function openEditor(id) {
   S.current = id; E.undo = []; E.redo = []; E.sel = -1; E.drawing = null; E.crop = null; E.sizeBase = null;
@@ -782,7 +846,8 @@ function renderEd() {
   if (E.drawing) drawShape(ectx, E.drawing, E.view);
   if (E.pending) drawShape(ectx, E.pending, E.view);
   const s = selShape();
-  if (s && !E.crop) {
+  if (s && !E.crop && s.type === 'dim') drawDimHandles(s);
+  else if (s && !E.crop) {
     const g = selGeom(s);
     ectx.save(); ectx.translate(g.c.x, g.c.y); ectx.rotate(rad(g.r)); ectx.translate(-g.c.x, -g.c.y);
     ectx.setLineDash([6 * E.k, 4 * E.k]); ectx.lineWidth = 1.5 * E.k; ectx.strokeStyle = '#fff';
@@ -795,8 +860,69 @@ function renderEd() {
   if (E.crop) drawCrop(p);
   placeSelPop();
 }
+// dimension selection: a ring on each measured end (A / B, accent when locked) and a dashed box on the draggable label
+function drawDimHandles(s) {
+  const G = dimGeom(s), k = E.k, dragEnd = E.drag && /^end/.test(E.drag.mode);
+  ectx.save(); ectx.shadowColor = 'rgba(0,0,0,.7)'; ectx.shadowBlur = 3;
+  if (G.label) {
+    ectx.save(); ectx.translate(G.lc.x, G.lc.y); ectx.rotate(G.a);
+    ectx.setLineDash([5 * k, 4 * k]); ectx.lineWidth = 1.5 * k; ectx.strokeStyle = '#fff';
+    ectx.strokeRect(-G.bw / 2 - 5 * k, -G.bh / 2 - 5 * k, G.bw + 10 * k, G.bh + 10 * k); ectx.restore();
+  }
+  if (!dragEnd) {
+    [[s.x1, s.y1, 'A', 'a', -1], [s.x2, s.y2, 'B', 'b', 1]].forEach(([x, y, L, key, dir]) => {
+      const locked = s.anchor === key, r = 11 * k;
+      ectx.beginPath(); ectx.arc(x, y, r, 0, Math.PI * 2);
+      ectx.lineWidth = 3 * k; ectx.strokeStyle = locked ? '#0E6B73' : '#fff'; ectx.stroke();
+      ectx.beginPath(); ectx.arc(x, y, 1.6 * k, 0, Math.PI * 2); ectx.fillStyle = '#fff'; ectx.fill();
+      const lx = x + G.u.x * dir * (r + 11 * k), ly = y + G.u.y * dir * (r + 11 * k);
+      ectx.beginPath(); ectx.arc(lx, ly, 9 * k, 0, Math.PI * 2); ectx.fillStyle = locked ? '#0E6B73' : '#fff'; ectx.fill();
+      ectx.shadowBlur = 0; ectx.fillStyle = locked ? '#fff' : '#15202A';
+      ectx.font = `700 ${11 * k}px ${MONO}`; ectx.textAlign = 'center'; ectx.textBaseline = 'middle';
+      ectx.fillText(L, lx, ly + 0.5 * k); ectx.shadowBlur = 3;
+    });
+  }
+  ectx.restore();
+}
+
+/* ---------- magnifier: shows what's under your finger while placing a point ---------- */
+function showLoupe(pt, snapped) {
+  const L = $('#loupe'), size = 132, dpr = window.devicePixelRatio || 1, zoom = 3;
+  if (L.width !== Math.round(size * dpr)) L.width = L.height = Math.round(size * dpr);
+  const x = L.getContext('2d'), half = size / zoom / 2 * dpr, W = L.width;
+  x.setTransform(1, 0, 0, 1, 0, 0); x.fillStyle = '#0A0E11'; x.fillRect(0, 0, W, W);
+  x.imageSmoothingEnabled = true;
+  x.drawImage(ed, pt.x * E.view - half, pt.y * E.view - half, half * 2, half * 2, 0, 0, W, W);
+  const c = W / 2, arm = W * 0.22, gap = W * 0.05;
+  x.lineCap = 'round';
+  [['rgba(0,0,0,.75)', 4 * dpr], [snapped ? '#3DDC84' : '#FFFFFF', 1.6 * dpr]].forEach(([col, lw]) => {
+    x.strokeStyle = col; x.lineWidth = lw; x.beginPath();
+    x.moveTo(c - arm, c); x.lineTo(c - gap, c); x.moveTo(c + gap, c); x.lineTo(c + arm, c);
+    x.moveTo(c, c - arm); x.lineTo(c, c - gap); x.moveTo(c, c + gap); x.lineTo(c, c + arm); x.stroke();
+  });
+  if (snapped) { x.strokeStyle = '#3DDC84'; x.lineWidth = 2 * dpr; x.beginPath(); x.arc(c, c, gap * 1.6, 0, Math.PI * 2); x.stroke(); }
+  // place it above the finger; slide to the side near the top edge
+  const st = $('#stage'), px = ed.offsetLeft + pt.x / E.k, py = ed.offsetTop + pt.y / E.k, lift = 60 + size / 2;
+  let lx = px, ly = py - lift;
+  if (ly - size / 2 < 4) { ly = clamp(py, size / 2 + 4, st.clientHeight - size / 2 - 4); lx = px + (px > st.clientWidth / 2 ? -lift : lift); }
+  L.style.left = clamp(lx - size / 2, 4, st.clientWidth - size - 4) + 'px';
+  L.style.top = clamp(ly - size / 2, 4, st.clientHeight - size - 4) + 'px';
+  L.classList.toggle('snapped', !!snapped);
+  L.hidden = false;
+}
+const hideLoupe = () => { $('#loupe').hidden = true; };
+const snapRadius = () => Math.round(clamp((E.touch ? 22 : 14) * E.k, 5, 90));
+function snapPoint(p, q, other) {
+  if (!S.snap) return { q, snapped: false };
+  let dir = null;
+  if (other) { const L = Math.hypot(q.x - other.x, q.y - other.y); if (L > 1) dir = { x: (q.x - other.x) / L, y: (q.y - other.y) / L }; }
+  const sp = snapEdge(p, q, dir, snapRadius());
+  return sp ? { q: sp, snapped: true } : { q, snapped: false };
+}
+const clampToImg = (p, q) => ({ x: clamp(q.x, 0, p.w), y: clamp(q.y, 0, p.h) });
+const tolK = () => E.touch ? 1.7 : 1;
 const toImg = e => { const r = ed.getBoundingClientRect(); return { x: (e.clientX - r.left) * E.k, y: (e.clientY - r.top) * E.k }; };
-function hitOne(s, pt) { const q = s.rot ? rotPt(pt.x, pt.y, center(s), -s.rot) : pt; return hitShape(s, q.x, q.y, 10 * E.k); }
+function hitOne(s, pt) { const q = s.rot ? rotPt(pt.x, pt.y, center(s), -s.rot) : pt; return hitShape(s, q.x, q.y, 10 * E.k * tolK()); }
 function hitIndex(p, pt) { for (let i = p.shapes.length - 1; i >= 0; i--) if (hitOne(p.shapes[i], pt)) return i; return -1; }
 
 /* ---------- undo: snapshots hold markup JSON plus the image blob (for crop/rotate) ---------- */
@@ -808,7 +934,7 @@ async function restore(p, s) {
   p.shapes = JSON.parse(s.shapes);
   if (s.blob !== p.blob) await setImage(p, s.blob, s.w, s.h);
   if (E.sel >= p.shapes.length) E.sel = -1;
-  E.sizeBase = null; changed();
+  E.sizeBase = null; E.lenBase = null; changed();
 }
 // image operations are async; run them one at a time so quick taps can't interleave history
 let opQueue = Promise.resolve();
@@ -903,10 +1029,16 @@ function drawCrop(p) {
     ectx.moveTo(mx - l, c.y); ectx.lineTo(mx + l, c.y); ectx.moveTo(mx - l, y2); ectx.lineTo(mx + l, y2);
     ectx.moveTo(c.x, my - l); ectx.lineTo(c.x, my + l); ectx.moveTo(x2, my - l); ectx.lineTo(x2, my + l);
   }
-  ectx.stroke(); ectx.restore();
+  ectx.stroke();
+  // round grab knobs so the handles are easy to find and hit with a finger
+  const knobs = [[c.x, c.y], [x2, c.y], [c.x, y2], [x2, y2]];
+  if (!c.aspect) knobs.push([c.x + c.w / 2, c.y], [c.x + c.w / 2, y2], [c.x, c.y + c.h / 2], [x2, c.y + c.h / 2]);
+  ectx.shadowColor = 'rgba(0,0,0,.6)'; ectx.shadowBlur = 5;
+  knobs.forEach(([x, y], i) => { ectx.beginPath(); ectx.arc(x, y, (i < 4 ? 9 : 7) * E.k, 0, Math.PI * 2); ectx.fillStyle = '#fff'; ectx.fill(); });
+  ectx.restore();
 }
 function cropHit(pt) {
-  const c = E.crop, t = 18 * E.k;
+  const c = E.crop, t = (E.touch ? 34 : 18) * E.k;
   const inX = pt.x > c.x - t && pt.x < c.x + c.w + t, inY = pt.y > c.y - t && pt.y < c.y + c.h + t;
   let h = '';
   if (inX && Math.abs(pt.y - c.y) < t) h += 'n'; else if (inX && Math.abs(pt.y - (c.y + c.h)) < t) h += 's';
@@ -936,6 +1068,7 @@ function cropDrag(pt) {
     if (d.h.includes('s')) h = clamp(o.h + dy, min, p.h - o.y);
   }
   Object.assign(E.crop, { x, y, w, h }); renderEd();
+  if (d.h !== 'move') showLoupe({ x: d.h.includes('w') ? x : d.h.includes('e') ? x + w : x + w / 2, y: d.h.includes('n') ? y : d.h.includes('s') ? y + h : y + h / 2 }, false);
 }
 $('#cropAspect').onclick = e => { const b = e.target.closest('button'); if (b) setCropAspect(b.dataset.v); };
 $('#cropRotL').innerHTML = icon('rotL'); $('#cropRotR').innerHTML = icon('rotR');
@@ -952,6 +1085,7 @@ function beginDrag(mode, pt, s, g) {
 }
 ed.addEventListener('pointerdown', e => {
   const p = curPhoto(); if (!p) return;
+  E.touch = e.pointerType === 'touch' || e.pointerType === 'pen';
   const pt = toImg(e);
   if (E.crop) {
     const h = cropHit(pt);
@@ -960,8 +1094,25 @@ ed.addEventListener('pointerdown', e => {
   }
   // a selected mark can be moved, resized or rotated whatever tool is active
   const cur = selShape();
-  if (cur) {
-    const g = selGeom(cur), near = q => Math.hypot(pt.x - q.x, pt.y - q.y) < 16 * E.k;
+  if (cur && cur.type === 'dim') {
+    // dimensions: drag an end (A/B), drag the label off to the side, or drag the line to move it
+    const R = 16 * E.k * tolK(), dA = Math.hypot(pt.x - cur.x1, pt.y - cur.y1), dB = Math.hypot(pt.x - cur.x2, pt.y - cur.y2);
+    let mode = null;
+    if (Math.min(dA, dB) < R) {
+      const end = dA <= dB ? 'a' : 'b';
+      if (cur.anchor === end) { toast(`End ${end.toUpperCase()} is locked. Unlock it in the dimension tab to move it.`); return; }
+      mode = end === 'a' ? 'end1' : 'end2';
+    }
+    if (!mode && hitLabel(dimGeom(cur), pt.x, pt.y, 6 * E.k * tolK())) mode = 'dimlabel';
+    if (!mode && hitOne(cur, pt)) mode = 'move';
+    if (mode) {
+      beginDrag(mode, pt, cur, { c: center(cur), sclH: pt }); capture(e);
+      if (mode === 'end1') showLoupe({ x: cur.x1, y: cur.y1 }, false);
+      if (mode === 'end2') showLoupe({ x: cur.x2, y: cur.y2 }, false);
+      renderEd(); return;
+    }
+  } else if (cur) {
+    const g = selGeom(cur), near = q => Math.hypot(pt.x - q.x, pt.y - q.y) < 16 * E.k * tolK();
     const mode = near(g.rotH) ? 'rotate' : near(g.sclH) ? 'scale' : hitOne(cur, pt) ? 'move' : null;
     if (mode) { beginDrag(mode, pt, cur, g); capture(e); return; }
   }
@@ -982,6 +1133,11 @@ ed.addEventListener('pointerdown', e => {
     return;
   }
   capture(e);
+  if (S.tool === 'dim') {
+    const { q, snapped } = snapPoint(p, pt, null);
+    E.drawing = { type: 'dim', x1: q.x, y1: q.y, x2: q.x, y2: q.y, color: S.color, lw, rot: 0, anchor: 'c', off: 0, tpos: 0.5 };
+    renderEd(); showLoupe(q, snapped); return;
+  }
   E.drawing = S.tool === 'pen' ? { type: 'pen', pts: [[pt.x, pt.y]], color: S.color, lw, rot: 0 } : { type: S.tool, x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y, color: S.color, lw, rot: 0 };
 });
 ed.addEventListener('pointermove', e => {
@@ -1002,13 +1158,33 @@ ed.addEventListener('pointermove', e => {
         const d = Math.max(Math.abs(pt.x - E.drawing.x1), Math.abs(pt.y - E.drawing.y1));
         E.drawing.x2 = E.drawing.x1 + Math.sign(pt.x - E.drawing.x1) * d; E.drawing.y2 = E.drawing.y1 + Math.sign(pt.y - E.drawing.y1) * d;
       }
+      if (E.drawing.type === 'dim') {
+        const d = E.drawing, r = snapPoint(p, clampToImg(p, { x: d.x2, y: d.y2 }), { x: d.x1, y: d.y1 });
+        d.x2 = r.q.x; d.y2 = r.q.y; renderEd(); showLoupe(r.q, r.snapped); return;
+      }
     }
     renderEd();
   } else if (E.drag) {
     const d = E.drag, s = selShape(); if (!s) return;
     const dx = pt.x - d.start.x, dy = pt.y - d.start.y;
-    if (!d.moved && Math.hypot(dx, dy) < 3 * E.k) return;
+    const endDrag = d.mode === 'end1' || d.mode === 'end2';
+    if (!d.moved && Math.hypot(dx, dy) < (endDrag ? 1 : 3) * E.k) return;
     if (!d.moved) { pushUndo(p, d.snap); d.moved = true; }
+    if (endDrag) {
+      const o = d.orig, one = d.mode === 'end1', other = one ? { x: o.x2, y: o.y2 } : { x: o.x1, y: o.y1 };
+      let q = { x: (one ? o.x1 : o.x2) + dx, y: (one ? o.y1 : o.y2) + dy };   // keeps the grab offset so the end doesn't jump under your finger
+      if (e.shiftKey) { const a = Math.round(Math.atan2(q.y - other.y, q.x - other.x) / (Math.PI / 12)) * (Math.PI / 12), L = Math.hypot(q.x - other.x, q.y - other.y); q = { x: other.x + Math.cos(a) * L, y: other.y + Math.sin(a) * L }; }
+      const r = snapPoint(p, clampToImg(p, q), other);
+      if (one) { s.x1 = r.q.x; s.y1 = r.q.y; } else { s.x2 = r.q.x; s.y2 = r.q.y; }
+      refreshDims(p); renderEd(); showLoupe(r.q, r.snapped); return;
+    }
+    if (d.mode === 'dimlabel') {
+      const G0 = dimGeom(d.orig);
+      let off = (d.orig.off || 0) + dx * G0.n.x + dy * G0.n.y, t = (d.orig.tpos ?? 0.5) + (dx * G0.u.x + dy * G0.u.y) / G0.len;
+      if (Math.abs(off) < 5 * E.k) off = 0;           // click back onto the line
+      if (Math.abs(t - 0.5) < 0.04) t = 0.5;          // and back to centre
+      s.off = off; s.tpos = clamp(t, 0.06, 0.94); renderEd(); return;
+    }
     if (d.mode === 'move') moveShape(s, d.orig, dx, dy);
     else if (d.mode === 'scale') {
       const k = Math.hypot(pt.x - d.c.x, pt.y - d.c.y) / Math.max(1, Math.hypot(d.h0.x - d.c.x, d.h0.y - d.c.y));
@@ -1023,6 +1199,7 @@ ed.addEventListener('pointermove', e => {
 });
 function endPointer() {
   const p = curPhoto(); if (!p) return;
+  hideLoupe();
   if (E.crop) { E.crop.drag = null; return; }
   if (E.drawing) {
     const d = E.drawing; E.drawing = null;
@@ -1037,7 +1214,7 @@ function endPointer() {
     }
   }
   if (E.drag) {
-    const moved = E.drag.moved; E.drag = null; E.sizeBase = null;
+    const moved = E.drag.moved; E.drag = null; E.sizeBase = null; E.lenBase = null;
     $('#selpop').classList.remove('dragging');
     if (moved) changed(); else { renderEd(); syncSelPop(); }
   }
@@ -1103,6 +1280,15 @@ function buildSelPop() {
       <div data-panel="color" class="sp-row sp-colors">${COLORS.map(c => `<button class="sw" type="button" data-spcolor="${c}" style="background:${c}" title="${COLOR_NAMES[c]}" aria-label="${COLOR_NAMES[c]}"></button>`).join('')}</div>
       <div data-panel="size" class="sp-row"><span class="label">Size</span><input type="range" id="spSize" min="20" max="300" step="1" value="100" aria-label="Size"><output id="spSizeV">100%</output></div>
       <div data-panel="line" class="sp-row"><span class="label">Line</span><div class="seg" id="spLine"><button type="button" data-v="s">Thin</button><button type="button" data-v="m">Medium</button><button type="button" data-v="l">Thick</button></div></div>
+      <div data-panel="dim" class="sp-rot">
+        <div class="sp-row"><span class="label">Lock</span><div class="seg" id="spAnchor"><button type="button" data-v="a" title="End A stays put; length changes at B">End A</button><button type="button" data-v="c" title="Both ends move from the middle">Middle</button><button type="button" data-v="b" title="End B stays put; length changes at A">End B</button></div></div>
+        <div class="sp-row"><span class="label">Length</span>
+          <button class="ibtn txt" type="button" data-lstep="-1" title="Shorter (hold to repeat)" aria-label="Shorter">−</button>
+          <input type="range" id="spLen" min="10" max="300" step="0.5" value="100" aria-label="Length">
+          <button class="ibtn txt" type="button" data-lstep="1" title="Longer (hold to repeat)" aria-label="Longer">+</button></div>
+        <div class="sp-row"><span class="hint" id="spLenV"></span><span class="sp-gap"></span><button class="ibtn txt" type="button" id="spOff0" title="Put the value back on the measured line">Text on line</button></div>
+        <label class="check"><input type="checkbox" id="spSnap"> Snap ends to detected edges</label>
+      </div>
       <div data-panel="rotate" class="sp-rot">
         <div class="sp-row"><span class="label">Rotate</span><span class="sp-gap"></span>
           <input class="input mono sp-deg" id="spRotN" type="number" step="0.1" min="-180" max="180" inputmode="decimal" aria-label="Rotation in degrees"><span class="muted">°</span>
@@ -1119,6 +1305,7 @@ function buildSelPop() {
       <button class="sp-tab" type="button" data-tab="color" title="Color" aria-label="Color" aria-expanded="false"><span class="sp-dot" id="spDot"></span></button>
       <button class="sp-tab" type="button" data-tab="size" title="Size" aria-label="Size" aria-expanded="false">${icon('size')}</button>
       <button class="sp-tab" type="button" data-tab="line" title="Line thickness" aria-label="Line thickness" aria-expanded="false">${icon('line')}</button>
+      <button class="sp-tab" type="button" data-tab="dim" title="Dimension: lock an end, length, edge snap" aria-label="Dimension settings" aria-expanded="false">${icon('dim')}</button>
       <button class="sp-tab" type="button" data-tab="rotate" title="Rotate" aria-label="Rotate" aria-expanded="false">${icon('rotR')}</button>
       <span class="sp-sep" aria-hidden="true"></span>
       <button class="sp-tab" type="button" id="spEdit" title="Edit text" aria-label="Edit text">${icon('markup')}</button>
@@ -1136,6 +1323,9 @@ function buildSelPop() {
     if (b.dataset.spcolor) { S.color = b.dataset.spcolor; recolorSelected(); }
     else if (b.closest('#spLine')) commit(() => { s.lw = baseLw(p) * SIZES[b.dataset.v]; });
     else if (b.dataset.rstep) { if (e.detail === 0) commit(() => { s.rot = normDeg(round1((s.rot || 0) + +b.dataset.rstep)); }); }   // keyboard activation; pointer handled below
+    else if (b.dataset.lstep) { if (e.detail === 0) commit(() => { setDimLen(s, clone(s), dimLen(s) + +b.dataset.lstep * E.k); }); }
+    else if (b.closest('#spAnchor')) { E.lenBase = null; commit(() => { s.anchor = b.dataset.v; }); }
+    else if (b.id === 'spOff0') commit(() => { s.off = 0; s.tpos = 0.5; });
     else if (b.id === 'spRot0') commit(() => { s.rot = 0; });
     else if (b.id === 'spUndo') undo();
     else if (b.id === 'spRedo') redo();
@@ -1148,10 +1338,21 @@ function buildSelPop() {
     const p = curPhoto(), s = selShape(); if (!s) return;
     if (!E.sizeBase) E.sizeBase = { orig: clone(s), pushed: false };
     if (!E.sizeBase.pushed) { pushUndo(p); E.sizeBase.pushed = true; }
-    scaleShape(s, E.sizeBase.orig, e.target.value / 100);
+    // for a dimension, Size is the label/arrow size; its length lives in the dimension tab
+    if (s.type === 'dim') s.fs = (E.sizeBase.orig.fs || s.lw * 5.5) * e.target.value / 100;
+    else scaleShape(s, E.sizeBase.orig, e.target.value / 100);
     $('#spSizeV').textContent = e.target.value + '%'; renderEd(); syncRail();
   });
   $('#spSize').addEventListener('change', () => { if (E.sizeBase) E.sizeBase.pushed = false; changed(); });
+  $('#spLen').addEventListener('input', e => {
+    const p = curPhoto(), s = selShape(); if (!s || s.type !== 'dim') return;
+    if (!E.lenBase) E.lenBase = { orig: clone(s), pushed: false };
+    if (!E.lenBase.pushed) { pushUndo(p); E.lenBase.pushed = true; }
+    setDimLen(s, E.lenBase.orig, dimLen(E.lenBase.orig) * e.target.value / 100);
+    refreshDims(p); syncLenUI(s); renderEd(); syncRail();
+  });
+  $('#spLen').addEventListener('change', () => { if (E.lenBase) E.lenBase.pushed = false; changed(); });
+  $('#spSnap').addEventListener('change', e => { S.snap = e.target.checked; ls.set('snap', S.snap); });
   // slider and degree box share one undo step per adjustment
   const liveRot = v => {
     const p = curPhoto(), s = selShape(); if (!s || !isFinite(v)) return;
@@ -1164,17 +1365,22 @@ function buildSelPop() {
   $('#spRotN').addEventListener('input', e => { if (e.target.value !== '' && e.target.value !== '-') liveRot(parseFloat(e.target.value)); });
   $('#spRotN').addEventListener('change', endRot);
   $('#spRotN').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
-  // ±1° / ±15° buttons: press to step, hold to repeat — one undo step per press
+  // rotation (±1° / ±15°) and length (±1 screen px) buttons: press to step, hold to repeat — one undo step per press
   pop.addEventListener('pointerdown', e => {
-    const b = e.target.closest('[data-rstep]'); const p = curPhoto(), s = selShape(); if (!b || !s) return;
-    e.preventDefault(); pushUndo(p);
-    const step = +b.dataset.rstep;
-    const go = () => { s.rot = normDeg(round1((s.rot || 0) + step)); syncRotUI(s); renderEd(); };
+    const b = e.target.closest('[data-rstep],[data-lstep]'); const p = curPhoto(), s = selShape(); if (!b || !s) return;
+    e.preventDefault(); pushUndo(p); E.lenBase = null;
+    const go = b.dataset.rstep
+      ? () => { s.rot = normDeg(round1((s.rot || 0) + +b.dataset.rstep)); syncRotUI(s); renderEd(); }
+      : () => { setDimLen(s, clone(s), dimLen(s) + +b.dataset.lstep * E.k); refreshDims(p); syncLenUI(s); renderEd(); };
     let t; const tick = () => { go(); t = setTimeout(tick, 70); };
     go(); t = setTimeout(tick, 400);
     const stop = () => { clearTimeout(t); window.removeEventListener('pointerup', stop); window.removeEventListener('pointercancel', stop); changed(); };
     window.addEventListener('pointerup', stop); window.addEventListener('pointercancel', stop);
   });
+}
+function syncLenUI(s) {
+  const p = curPhoto(), px = Math.round(dimLen(s)), unit = s.unit in UNIT_MM ? s.unit : 'mm', est = estimate(p, s, unit);
+  $('#spLenV').textContent = `${px} px` + (s.ref ? ' · scale reference' : est ? ` · ≈ ${est} ${unit}` : '');
 }
 function syncSelPop() {
   const pop = $('#selpop'), s = selShape();
@@ -1183,8 +1389,17 @@ function syncSelPop() {
   if (!E.sizeBase) { $('#spSize').value = 100; $('#spSizeV').textContent = '100%'; }
   syncRotUI(s);
   const stroke = s.type !== 'text' && s.type !== 'marker';
+  const isDim = s.type === 'dim';
   $('#selpop [data-tab="line"]').hidden = !stroke;
-  if (E.spTab === 'line' && !stroke) E.spTab = null;
+  $('#selpop [data-tab="dim"]').hidden = !isDim;
+  $('#selpop [data-tab="rotate"]').hidden = isDim;   // a dimension's angle comes from its two ends
+  if ((E.spTab === 'line' && !stroke) || (E.spTab === 'dim' && !isDim) || (E.spTab === 'rotate' && isDim)) E.spTab = null;
+  if (isDim) {
+    document.querySelectorAll('#spAnchor button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === (s.anchor || 'c')));
+    $('#spSnap').checked = S.snap;
+    if (!E.lenBase) $('#spLen').value = 100;
+    syncLenUI(s);
+  }
   $('#spPanel').hidden = !E.spTab;
   document.querySelectorAll('#spPanel [data-panel]').forEach(el => el.hidden = el.dataset.panel !== E.spTab);
   document.querySelectorAll('#selpop [data-tab]').forEach(b => { b.setAttribute('aria-selected', b.dataset.tab === E.spTab); b.setAttribute('aria-expanded', b.dataset.tab === E.spTab); });
@@ -1255,7 +1470,7 @@ document.addEventListener('keydown', e => {
   if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelected(); return; }
   if (!mod && e.key.toLowerCase() === 'x') { startCrop(); return; }
   const sel = selShape();
-  if (sel && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {   // [ ] rotate 1°, Shift for 0.1°
+  if (sel && sel.type !== 'dim' && (e.code === 'BracketLeft' || e.code === 'BracketRight')) {   // [ ] rotate 1°, Shift for 0.1°
     e.preventDefault(); const st = (e.shiftKey ? 0.1 : 1) * (e.code === 'BracketLeft' ? -1 : 1);
     commit(() => { sel.rot = normDeg(round1((sel.rot || 0) + st)); }); return;
   }
@@ -1669,14 +1884,15 @@ async function makeSample(kind) {
     { type: 'marker', x: 540, y: 800, n: 2, r: 32, color: '#F5B800', note: 'Hole #3 offset from drawing position — verify with CMM', lw },
     { type: 'arrow', x1: 1120, y1: 700, x2: 985, y2: 600, color: '#E5322D', lw },
     { type: 'marker', x: 1150, y: 720, n: 3, r: 32, color: '#E5322D', note: 'Burr on slot edge', lw },
-    { type: 'dim', x1: 380, y1: 262, x2: 1220, y2: 262, color: '#2F7BEA', lw: 4, fs: 28, value: '84.0', unit: 'mm', ref: true, rot: 0 },
-    { type: 'dim', x1: 418, y1: 952, x2: 1220, y2: 952, color: '#2F7BEA', lw: 4, fs: 28, value: '80.2', unit: 'mm', est: true, rot: 0 },
+    { type: 'dim', x1: 380, y1: 340, x2: 1220, y2: 340, off: -78, tpos: 0.5, color: '#2F7BEA', lw: 4, fs: 28, value: '84.0', unit: 'mm', ref: true, rot: 0, anchor: 'c' },
+    { type: 'dim', x1: 418, y1: 884, x2: 1220, y2: 884, off: 68, tpos: 0.62, color: '#2F7BEA', lw: 4, fs: 28, value: '80.2', unit: 'mm', est: true, rot: 0, anchor: 'a' },
   ] : [{ type: 'text', x: 290, y: 160, text: 'Reference part · Rev C', color: '#22A355', fs: 34, lw }];
   return addPhoto({ blob, w: W, h: H, shapes, sample: true, name: `sample-${kind}.jpg`, caption: kind === 'actual' ? 'Incoming bracket — cosmetic and dimensional issues' : 'Known-good reference' }, { persist: false });
 }
 
 /* ---------- boot ---------- */
 $('#brandMark').innerHTML = icon('logo');
+if (location.hash === '#debug') window.__drcam = { S, E };   // test hook, off unless the URL ends in #debug
 buildRail(); buildSelPop(); buildCollageControls(); renderChip(); renderTabs();
 if (IN_ARTIFACT) $('#dropHint').textContent = '…or drop / paste images here';
 (async () => {
